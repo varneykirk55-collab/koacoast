@@ -1,6 +1,8 @@
 shader_type spatial;
 render_mode shadows_disabled;
 
+uniform vec4 forest_green : source_color = vec4(0.090196, 0.419608, 0.227451, 1.0);
+uniform vec4 sunny_green : source_color = vec4(0.286275, 0.662745, 0.258824, 1.0);
 uniform float canopy_start = 205.0;
 uniform float canopy_span = 100.0;
 varying float fade;
@@ -17,6 +19,8 @@ void fragment() {
 		discard;
 	}
 	vec3 canopy_green = COLOR.rgb * vec3(0.91, 1.12, 1.13) + vec3(0.003, 0.009, 0.004);
+	vec3 reference_green = mix(forest_green.rgb, sunny_green.rgb, smoothstep(0.18, 0.32, COLOR.g) * 0.74);
+	canopy_green = mix(canopy_green, reference_green, 0.45);
 	vec3 leaves = canopy_green * mix(0.66, 1.23, smoothstep(0.37, 1.0, leaf_height));
 	ALBEDO = mix(vec3(0.096, 0.071, 0.042), leaves, smoothstep(0.34, 0.43, leaf_height));
 	ROUGHNESS = 0.95;

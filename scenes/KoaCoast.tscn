@@ -19,6 +19,8 @@
 
 [ext_resource type="Script" path="res://scenery/IslandScenery.gd" id="scenery"]
 
+[ext_resource type="Script" path="res://audio/IslandAudio.gd" id="island_audio"]
+
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("atmosphere")
 shader_parameter/trade_clouds = ExtResource("clouds")
@@ -97,3 +99,6 @@ script = ExtResource("slope_tool")
 
 [node name="IslandScenery" type="Node3D" parent="."]
 script = ExtResource("scenery")
+
+[node name="IslandAudio" type="Node3D" parent="."]
+script = ExtResource("island_audio")

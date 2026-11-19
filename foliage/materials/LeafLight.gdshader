@@ -1,6 +1,8 @@
 shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D foliage_atlas : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform vec4 forest_green : source_color = vec4(0.090196, 0.419608, 0.227451, 1.0);
+uniform vec4 sunny_green : source_color = vec4(0.286275, 0.662745, 0.258824, 1.0);
 uniform float detail_range = 65000.0;
 uniform float fade_span = 50.0;
 varying float detail_fade;
@@ -33,6 +35,10 @@ void fragment() {
     float leaf = smoothstep(0.018, 0.16, base.g - 0.5 * (base.r + base.b));
     vec3 tint = mix(vec3(0.88, 1.05, 1.18), vec3(1.01, 1.09, 1.08), green_variation);
     vec3 green = base * tint + vec3(0.003, 0.008, 0.006);
+    float tone = smoothstep(0.08, 0.52, base.g) * mix(0.80, 1.0, green_variation);
+    vec3 palette = mix(forest_green.rgb, sunny_green.rgb, tone);
+    palette *= clamp(base.g / max(palette.g, 0.08), 0.58, 1.57);
+    green = mix(green, palette, 0.48);
     ALBEDO = mix(base, green, leaf) * upper_light;
     ALPHA = texel.a;
     ALPHA_SCISSOR_THRESHOLD = .30;

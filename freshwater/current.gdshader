@@ -3,6 +3,7 @@ render_mode cull_disabled, specular_schlick_ggx, shadows_disabled;
 
 uniform sampler2D flow_detail : repeat_enable, filter_linear_mipmap;
 uniform float detail_range = 175.0;
+uniform vec4 freshwater_tint : source_color = vec4(0.137255, 0.498039, 0.505882, 1.0);
 varying vec4 channel;
 varying float camera_range;
 varying float distance_blend;
@@ -27,6 +28,7 @@ void fragment() {
 
 	// A distant surface keeps the same color family and silhouette at every preset.
 	vec3 far_color = mix(vec3(0.084, 0.235, 0.228), vec3(0.105, 0.320, 0.314), depth);
+	far_color = mix(far_color, freshwater_tint.rgb, 0.34);
 	far_color = mix(far_color, vec3(0.088, 0.315, 0.36), channel.a * 0.45);
 	float far_foam = max(smoothstep(0.07, 0.78, fall) * mix(0.43, 0.87, core), channel.b * core * 0.55);
 	far_color = mix(far_color, vec3(0.68, 0.75, 0.74), far_foam);
@@ -56,6 +58,7 @@ void fragment() {
 		vec3 shallows = vec3(0.125, 0.263, 0.195);
 		vec3 deep = mix(vec3(0.045, 0.156, 0.158), vec3(0.052, 0.239, 0.226), pool);
 		vec3 near_color = mix(shallows, deep, smoothstep(0.03, 0.90, depth));
+		near_color = mix(near_color, freshwater_tint.rgb, 0.26 + pool * 0.11);
 		near_color = mix(near_color, vec3(0.073, 0.275, 0.31), channel.a * 0.54);
 		float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
 		float fresnel = pow(1.0 - facing, 4.0);
