@@ -23,7 +23,12 @@ var _canopy_nodes: Array[MultiMeshInstance3D] = []
 var _forest_material: ShaderMaterial
 var _forest_leaves: ShaderMaterial
 var _forest_detail_nodes: Array[MultiMeshInstance3D] = []
+var _forest_crowns: Array[Vector4] = []
 var _water_cells := {}
+
+
+func get_forest_crowns() -> Array[Vector4]:
+	return _forest_crowns
 
 
 func _ready() -> void:
@@ -54,6 +59,9 @@ func _setup() -> void:
 	_forest_leaves.set_shader_parameter("fade_span", 28.0)
 	_index_waterways()
 	var forest := _plant_forest(crowns)
+	_forest_crowns.clear()
+	for crown: Vector4 in forest.values():
+		_forest_crowns.append(crown)
 	var tree_mesh := _tree_mesh()
 	_build_canopy(crowns, tree_mesh, _canopy)
 	_build_canopy(forest, tree_mesh, _forest_material)

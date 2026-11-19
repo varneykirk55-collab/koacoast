@@ -110,6 +110,8 @@ func _plant_tile(key: Vector2i) -> void:
 					continue
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size)
 				groups[kind].append(Transform3D(basis, Vector3(local.x, h - 0.05, local.y)))
+	var samples: Array[Dictionary] = []
+	var subcells := {}
 	for kind in groups.size():
 		var transforms: Array = groups[kind]
 		if transforms.is_empty():
@@ -119,12 +121,23 @@ func _plant_tile(key: Vector2i) -> void:
 		batch.mesh = SPECIES[kind]
 		batch.instance_count = transforms.size()
 		for i in transforms.size():
-			batch.set_instance_transform(i, transforms[i])
+			var xf: Transform3D = transforms[i]
+			batch.set_instance_transform(i, xf)
+			var world_pos := tile.position + xf.origin
+			if kind == 3 or kind == 4:
+				samples.append({ "kind": kind, "pos": world_pos })
+			else:
+				var cell_step := 8.0 if kind == 0 else 5.0
+				var sk := Vector3i(kind, floori(world_pos.x / cell_step), floori(world_pos.z / cell_step))
+				if not subcells.has(sk):
+					subcells[sk] = true
+					samples.append({ "kind": kind, "pos": world_pos })
 		var display := MultiMeshInstance3D.new()
 		display.multimesh = batch
 		display.material_override = _near_leaves
 		display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		tile.add_child(display)
+	tile.set_meta("harvest_samples", samples)
 
 func _weight(tex: Vector3, id: int) -> float:
 	return (1.0 - tex.z if int(tex.x) == id else 0.0) + (tex.z if int(tex.y) == id else 0.0)
