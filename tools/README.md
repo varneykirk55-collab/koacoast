@@ -67,3 +67,15 @@ godot --path . --display-driver x11 --audio-driver Dummy --script res://tools/ca
 Slope at each 2 m sample is the angle whose tangent is the horizontal gradient, from central differences on the region height maps. A sample of those slopes is compared with `Terrain3DData.get_normal` and the heights with `get_height`. The comparison is printed in `docs/slope_stats.txt`.
 
 Steep clusters are connected land cells on the real cliffs. Grouping starts at the walk limit and tightens (60°, 65°, 70°, 75°) if one component would otherwise swallow the whole ridge. A group needs at least 48 cells (192 m²). Groups are ranked by how much slope they carry above that cut. The map marks each group's steepest point. Coordinates are world X and Z in meters.
+
+## Walkability pass
+
+`tools/walkability_edit.py` softens mid-slope steps and cuts three approach valleys. It does not touch the shoreline (everything under 24 m), sea cliffs, the 80° faces, the recorded cliff points, or ground at or above 230 m. The original region files are in `backups/terrain_regions_pre_walkability/` with `SHA256SUMS.txt`.
+
+```
+godot --headless --path . --script res://tools/walkability_dump.gd
+python3 tools/walkability_edit.py
+godot --headless --path . --script res://tools/walkability_apply.gd
+```
+
+Foliage is not moved. Plants that were seated on ground which rose or fell are reported by `tools/walkability_validate.gd` and left where they are.
