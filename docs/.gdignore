@@ -1,0 +1,1 @@
+Generated slope maps stay out of the Godot import scan. The tool writes them by absolute path.
