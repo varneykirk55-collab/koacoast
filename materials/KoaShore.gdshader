@@ -1,4 +1,7 @@
 shader_type spatial;
+
+uniform vec4 volcanic_charcoal : source_color = vec4(0.258824, 0.239216, 0.219608, 1.0);
+uniform vec4 volcanic_earth : source_color = vec4(0.545098, 0.396078, 0.290196, 1.0);
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx, skip_vertex_transform;
 
 /* Terrain3D generated terrain shader, kept intact through the normal calculation.
@@ -898,7 +901,12 @@ void fragment() {
 	float coast_grade = 1.0 - smoothstep(5.0, 28.0, height);
 	vec3 mineral = albedo * mix(vec3(1.09, 1.03, 0.95), vec3(1.13, 1.05, 0.95), coast_grade);
 	mineral += vec3(0.007, 0.004, 0.002) * smoothstep(0.4, 15.0, height);
-	vec3 tropical = albedo * vec3(0.96, 1.07, 1.055);
+	float luminance = dot(albedo, vec3(0.213, 0.715, 0.072));
+	vec3 mineral_target = mix(volcanic_charcoal.rgb, volcanic_earth.rgb,
+		smoothstep(0.08, 0.38, luminance) * smoothstep(-0.024, 0.092, albedo.r - albedo.b));
+	mineral_target *= clamp(luminance / max(dot(mineral_target, vec3(0.213, 0.715, 0.072)), 0.045), 0.32, 1.55);
+	mineral = mix(mineral, mineral_target, 0.28 * (1.0 - coast_grade * 0.64));
+	vec3 tropical = albedo * vec3(0.94, 1.13, 1.07);
 	// Apply PBR
 	ALBEDO = mix(mineral, tropical, green);
 	ROUGHNESS = clamp(rough, 0.0, 1.0);

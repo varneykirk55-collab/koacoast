@@ -4,9 +4,9 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx, depth_draw_opaq
 
 uniform sampler2D coastal_shelf : filter_linear_mipmap, repeat_disable;
 uniform sampler2D ocean_detail : filter_linear_mipmap, repeat_enable;
-uniform vec4 deep : source_color = vec4(0.025, 0.20, 0.42, 1.0);
+uniform vec4 deep : source_color = vec4(0.043137, 0.333333, 0.572549, 1.0);
 uniform vec4 shelf_blue : source_color = vec4(0.028, 0.47, 0.61, 1.0);
-uniform vec4 lagoon : source_color = vec4(0.14, 0.69, 0.61, 1.0);
+uniform vec4 lagoon : source_color = vec4(0.145098, 0.725490, 0.764706, 1.0);
 uniform vec4 breaker : source_color = vec4(0.89, 0.95, 0.94, 1.0);
 uniform vec3 sun_dir = vec3(-0.55, 0.74, 0.37);
 
