@@ -56,7 +56,8 @@ void fragment() {
     }
     vec3 sky = mix(vec3(0.4, 0.58, 0.76), vec3(0.75, 0.86, 0.94), clamp(world_n.y, 0.0, 1.0));
     water = mix(water, sky, fres * 0.22);
-    water += lagoon.rgb * clamp(sin(a) * 0.5 + 0.5, 0.0, 1.0) * ndotv * 0.08;
+    float wave_detail = (1.0 - smoothstep(500.0, 3600.0, range_m)) / (1.0 + fwidth(a));
+    water += lagoon.rgb * clamp(sin(a) * 0.5 + 0.5, 0.0, 1.0) * ndotv * 0.08 * wave_detail;
     float spec = pow(clamp(dot(world_n, normalize(normalize(sun_dir) + view)), 0.0, 1.0), 90.0);
     water += vec3(1.0, 0.96, 0.88) * spec * 0.45;
 
@@ -84,5 +85,6 @@ void fragment() {
     ALBEDO = water;
     ROUGHNESS = mix(0.14, 0.8, foam);
     SPECULAR = mix(0.5, 0.12, foam);
-    ALPHA = clamp(alpha, 0.0, 1.0);
+    // Blend into the sky before the ocean grid reaches its outer perimeter.
+    ALPHA = clamp(alpha, 0.0, 1.0) * (1.0 - smoothstep(19000.0, 45000.0, range_m));
 }

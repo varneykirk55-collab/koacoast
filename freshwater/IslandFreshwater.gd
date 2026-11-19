@@ -45,6 +45,7 @@ func set_quality(level: int) -> void:
 func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool) -> void:
 	var mesh := SurfaceTool.new()
 	mesh.begin(Mesh.PRIMITIVE_TRIANGLES)
+	mesh.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
 	var points: Array = channel.points
 	var distance := 0.0
 	var previous := _position(points[0])
@@ -62,12 +63,14 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 		var impact := 0.0
 		var cascade := 0.0
 		var curtain_width := 0.0
+		var drop_height := 0.0
 		for fall: Array in channel.falls:
 			var start := int(fall[0])
 			var end := int(fall[1])
 			if i >= start and i <= end:
 				var position := float(i - start) / float(end - start)
 				var drop := _position(points[start]).y - _position(points[end]).y
+				drop_height = maxf(drop_height, drop)
 				var curtain := sin(position * PI)
 				cascade = maxf(cascade, curtain * 0.55 + 0.45)
 				# Tall drops fan out over the cliff face, then gather at the pool.
@@ -83,9 +86,11 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 		var width := clampf(sqrt(float(point[3])) * 0.016, 0.47, 2.45)
 		if not main:
 			width = minf(width, 1.15)
+		var pool_mask := 0.0
 		for pool: Array in channel.pools:
 			if i >= int(pool[0]) and i <= int(pool[1]):
-				width += sin(PI * (i - float(pool[0])) / (float(pool[1]) - float(pool[0]))) * 2.1
+				pool_mask = sin(PI * (i - float(pool[0])) / (float(pool[1]) - float(pool[0])))
+				width += pool_mask * 2.1
 				rapid *= 0.35
 		width += cascade * clampf(width * 0.95, 0.65, 1.45)
 		width += impact * 0.55 * (1.0 - smoothstep(0.18, 0.50, slope))
@@ -96,6 +101,14 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 		var coastal := 1.0 - smoothstep(0.04, 1.6, center.y) if main else 0.0
 		var left := maxf(_bank_distance(center, -across, width, cascade), curtain_width)
 		var right := maxf(_bank_distance(center, across, width, cascade), curtain_width * (0.8 + 0.30 * sin(distance * 0.36)))
+		var far_width := width
+		if main:
+			far_width = maxf(width, clampf(2.55 + sqrt(float(point[3])) * 0.023, 2.55, 5.4))
+			far_width *= smoothstep(0.0, 6.0, i)
+		far_width += pool_mask * 2.5
+		var far_curtain := minf(4.5, curtain_width * 1.65 + drop_height * 0.025)
+		var far_left := maxf(_bank_distance(center, -across, far_width, cascade), far_curtain)
+		var far_right := maxf(_bank_distance(center, across, far_width, cascade), far_curtain * 0.92)
 		for column in CROSS_SECTIONS + 1:
 			var u := float(column) / CROSS_SECTIONS
 			var offset := -left * (1.0 - u * 2.0) if u < 0.5 else right * (u * 2.0 - 1.0)
@@ -118,6 +131,19 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 			mesh.set_uv(Vector2(u, distance))
 			mesh.set_uv2(Vector2(cascade, left + right))
 			mesh.set_normal(across.cross(tangent).normalized())
+			var far_offset := -far_left * (1.0 - u * 2.0) if u < 0.5 else far_right * (u * 2.0 - 1.0)
+			var distant := center + across * far_offset
+			var far_bed := _terrain.get_height(distant)
+			if is_finite(far_bed) and column != CROSS_SECTIONS / 2:
+				if edge and coastal < 0.96:
+					distant.y = minf(center.y, far_bed - 0.02)
+				elif cascade > 0.05:
+					distant.y = lerpf(center.y, far_bed + 0.27, smoothstep(0.05, 0.80, cascade))
+					distant.y = minf(distant.y, far_bed + 0.62)
+				else:
+					distant.y = minf(center.y, far_bed + 0.48)
+			var delta := distant - vertex
+			mesh.set_custom(0, Color(delta.x, delta.y, delta.z, pool_mask))
 			mesh.add_vertex(vertex)
 		if i > 0:
 			var row := (i - 1) * (CROSS_SECTIONS + 1)
@@ -127,7 +153,8 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 				for index: int in [a, b, a + 1, a + 1, b, b + 1]:
 					mesh.add_index(index)
 
-	_add_mesh(group, label, mesh.commit(), _current)
+	var water := _add_mesh(group, label, mesh.commit(), _current)
+	water.extra_cull_margin = 9.0
 
 
 func _bank_distance(center: Vector3, direction: Vector3, width: float, cascade: float) -> float:
