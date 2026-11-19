@@ -32,6 +32,7 @@ const ANIM_DIR := "res://player/kekoa/animations"
 @export var air_control := 0.3
 @export var turn_speed := 10.0
 @export var mouse_sensitivity := 0.003
+@export var controller_look_sensitivity := 2.4
 ## How quickly the camera catches up with Kekoa (higher = tighter).
 @export var camera_follow := 12.0
 @export var camera_height := 1.55
@@ -54,6 +55,8 @@ var _jumping := false
 var _air_time := 0.0
 var _blend := 0.0
 var _playback: AnimationNodeStateMachinePlayback
+var gameplay_input_blocked := false
+var build_mode_active := false
 
 
 func _ready() -> void:
@@ -71,25 +74,7 @@ func _ready() -> void:
 
 
 func _register_inputs() -> void:
-	var map := {
-		"move_forward": [KEY_W, KEY_UP],
-		"move_back": [KEY_S, KEY_DOWN],
-		"move_left": [KEY_A, KEY_LEFT],
-		"move_right": [KEY_D, KEY_RIGHT],
-		"jump": [KEY_SPACE],
-		"sprint": [KEY_SHIFT],
-		"speed_up": [KEY_EQUAL, KEY_KP_ADD],
-		"speed_down": [KEY_MINUS, KEY_KP_SUBTRACT],
-		"speed_reset": [KEY_0, KEY_KP_0],
-	}
-	for action in map:
-		if InputMap.has_action(action):
-			continue
-		InputMap.add_action(action)
-		for key in map[action]:
-			var ev := InputEventKey.new()
-			ev.physical_keycode = key
-			InputMap.action_add_event(action, ev)
+	InputConfig.ensure_actions()
 
 
 ## Swaps in Idle/Walk/Run/Jump clips the owner downloaded from Mixamo.
@@ -190,17 +175,19 @@ func _find_coastal_flat(terrain: Node) -> Vector3:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if gameplay_input_blocked:
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		elif not build_mode_active and event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_change_multiplier(multiplier_step)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		elif not build_mode_active and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_change_multiplier(-multiplier_step)
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_pivot.rotation.y -= event.relative.x * mouse_sensitivity
 		_spring.rotation.x = clampf(_spring.rotation.x - event.relative.y * mouse_sensitivity, -1.2, 0.5)
-	elif event.is_action_pressed("ui_cancel"):
+	elif event.is_action_pressed("ui_cancel") and get_node_or_null("../SurvivalSystem") == null:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("speed_up"):
 		_change_multiplier(multiplier_step)
@@ -223,18 +210,18 @@ func _physics_process(delta: float) -> void:
 	else:
 		_air_time = 0.0
 		_jumping = false
-		if Input.is_action_just_pressed("jump"):
+		if not gameplay_input_blocked and Input.is_action_just_pressed("jump"):
 			velocity.y = jump_velocity
 			_jumping = true
 			jumped = true
 
 	# --- Movement relative to camera ---
-	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input := Vector2.ZERO if gameplay_input_blocked else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := _pivot.global_basis * Vector3(input.x, 0.0, input.y)
 	dir.y = 0.0
 	dir = dir.normalized()
 
-	_sprinting = Input.is_action_pressed("sprint") and input.length() > 0.1
+	_sprinting = not gameplay_input_blocked and Input.is_action_pressed("sprint") and input.length() > 0.1
 	var speed := (sprint_speed if _sprinting else walk_speed) * speed_multiplier
 	var accel := acceleration if is_on_floor() else acceleration * air_control
 	var target := dir * speed
@@ -252,6 +239,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if not gameplay_input_blocked:
+		var look_vec := Input.get_vector("look_left", "look_right", "look_up", "look_down")
+		if look_vec.length() > 0.05:
+			_pivot.rotation.y -= look_vec.x * controller_look_sensitivity * delta
+			_spring.rotation.x = clampf(_spring.rotation.x - look_vec.y * controller_look_sensitivity * delta, -1.2, 0.5)
 	# Smooth camera follow; the SpringArm keeps it out of the ground.
 	var goal := global_position + Vector3.UP * camera_height
 	_pivot.global_position = _pivot.global_position.lerp(goal, clampf(camera_follow * delta, 0.0, 1.0))

@@ -21,6 +21,8 @@
 
 [ext_resource type="Script" path="res://audio/IslandAudio.gd" id="island_audio"]
 
+[ext_resource type="Script" path="res://gameplay/SurvivalSystem.gd" id="survival"]
+
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("atmosphere")
 shader_parameter/trade_clouds = ExtResource("clouds")
@@ -102,3 +104,8 @@ script = ExtResource("scenery")
 
 [node name="IslandAudio" type="Node3D" parent="."]
 script = ExtResource("island_audio")
+
+[node name="SurvivalSystem" type="Node" parent="."]
+script = ExtResource("survival")
+terrain_path = NodePath("../Terrain3D")
+player_path = NodePath("../Player")
