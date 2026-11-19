@@ -27,16 +27,22 @@ void fragment() {
 	float edge = min(across, 1.0 - across);
 	float core = smoothstep(0.015 + streak.r * 0.045, 0.21, edge);
 	float whitewater = strength * smoothstep(0.23, 0.74, curls + fall * 0.23);
-	float falling_sheet = fall * mix(0.55, 1.0, core) * mix(0.48, 0.88, streak.r);
+	float runnels = sin(across * (17.0 + width * 2.8) + sin(travel * 0.38 + t * 0.32) * 0.56) * 0.5 + 0.5;
+	float sheets = mix(streak.r, runnels, 0.44);
+	float falling_sheet = fall * mix(0.20, 0.76, smoothstep(0.18, 0.81, sheets));
+	float torn_edge = mix(0.018, 0.12, smoothstep(0.28, 0.72, streak.g));
+	if (fall > 0.50 && edge < torn_edge * (fall - 0.50) * 2.0) {
+		discard;
+	}
 	float impact = channel.b * smoothstep(0.17, 0.70, 0.65 * curls + 0.4 * core);
-	float foam = clamp(max(whitewater, falling_sheet) + impact * 0.68, 0.0, 1.0);
+	float foam = clamp(max(whitewater * (1.0 - 0.63 * fall), falling_sheet) + impact * 0.52, 0.0, 0.92);
 
 	vec3 stone_water = vec3(0.082, 0.12, 0.106);
 	vec3 deep = vec3(0.035, 0.14, 0.13);
 	vec3 water = mix(stone_water, deep, smoothstep(0.03, 0.79, channel.r));
 	water = mix(water, vec3(0.075, 0.205, 0.218), channel.a * 0.6);
 	water += (curls - 0.5) * 0.065;
-	ALBEDO = mix(water, vec3(0.81, 0.86, 0.84), foam * mix(core, 1.0, fall));
+	ALBEDO = mix(water, vec3(0.66, 0.72, 0.70), foam * mix(core, 1.0, fall));
 	ROUGHNESS = mix(0.19, 0.73, foam);
 	SPECULAR = mix(0.51, 0.16, foam);
 }

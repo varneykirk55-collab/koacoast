@@ -72,7 +72,9 @@ func _add_channel(group: Node3D, label: String, channel: Dictionary, main: bool)
 				cascade = maxf(cascade, curtain * 0.55 + 0.45)
 				# Tall drops fan out over the cliff face, then gather at the pool.
 				var flow := sqrt(float(point[3])) * 0.027
-				curtain_width = maxf(curtain_width, curtain * clampf(flow + drop * 0.085, 0.7, 3.6))
+				var skirt := 0.42 + 0.50 * smoothstep(0.0, 0.3, position)
+				var spread := skirt + 0.12 * curtain
+				curtain_width = maxf(curtain_width, spread * clampf(flow + drop * 0.055, 0.7, 2.75))
 				rapid = maxf(rapid, 0.80)
 			if i == int(fall[1]):
 				_add_spray(center, clampf((_position(points[int(fall[0])]).y - center.y) * 0.11, 0.7, 3.7))
