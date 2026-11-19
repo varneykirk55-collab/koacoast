@@ -1,4 +1,6 @@
-[gd_resource type="Terrain3DMaterial" format=3]
+[gd_resource type="Terrain3DMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://materials/KoaShore.gdshader" id="1_shore"]
 
 [resource]
 _shader_parameters = {"blend_sharpness": 0.0}
@@ -6,3 +8,5 @@ world_background = 0
 auto_shader_enabled = false
 macro_variation_enabled = true
 projection_enabled = true
+shader_override_enabled = true
+shader_override = ExtResource("1_shore")
