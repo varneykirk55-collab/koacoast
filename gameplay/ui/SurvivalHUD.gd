@@ -70,31 +70,40 @@ func set_interaction_prompt(text: String) -> void:
 		_prompt_panel.visible = true
 
 
-func update_build_hud(active: bool, piece_order: Array[StringName], selected_idx: int, database: GameDatabase, inventory: InventorySystem, eval: Dictionary) -> void:
+func update_build_hud(active: bool, piece_order: Array[StringName], selected_idx: int, selected_material_id: StringName, database: GameDatabase, inventory: InventorySystem, eval: Dictionary) -> void:
 	if _build_bar == null:
 		return
 	_build_bar.visible = active
 	if not active:
 		return
+	var mat_parts: Array[String] = []
+	for mid in database.building_material_order:
+		var mdef := database.get_building_material(mid)
+		var mname := mdef.display_name if mdef else String(mid).capitalize()
+		mat_parts.append("[%s]" % mname.to_upper() if mid == selected_material_id else mname)
+
 	var parts: Array[String] = []
 	for i in piece_order.size():
 		var pid := piece_order[i]
 		var pdef := database.get_building_piece(pid)
-		var count := inventory.get_count(pdef.item_id) if (pdef and inventory) else 0
+		var item_id := database.get_building_item_id(pid, selected_material_id)
+		var count_str := "--"
+		if item_id != &"" and inventory:
+			count_str = str(inventory.get_count(item_id))
 		var name_str := pdef.display_name if pdef else String(pid)
 		if i == selected_idx:
-			parts.append("[%d:%s x%d]" % [i + 1, name_str, count])
+			parts.append("[%d:%s x%s]" % [i + 1, name_str, count_str])
 		else:
-			parts.append("%d:%s(%d)" % [i + 1, name_str, count])
-	_build_pieces_label.text = "  ".join(parts)
+			parts.append("%d:%s(%s)" % [i + 1, name_str, count_str])
+	_build_pieces_label.text = "Tier [G/D-Down]: %s   |   %s" % [" ".join(mat_parts), " ".join(parts)]
 
 	var valid := bool(eval.get("valid", false))
 	var reason := String(eval.get("reason", ""))
 	if valid:
-		_build_status_label.text = "READY: %s  |  Place: LMB/F/RT  |  Rotate: R/LB/RB  |  Cycle: Q/C/Wheel/D-Pad  |  Remove: MMB/X/LT  |  Exit: RMB/B" % reason
+		_build_status_label.text = "READY: %s  |  Place: LMB/F/RT  |  Rotate: R/LB/RB  |  Tier: G/D-Down  |  Remove: MMB/X/LT  |  Exit: RMB/B" % reason
 		_build_status_label.modulate = Color(0.45, 0.96, 0.55)
 	else:
-		_build_status_label.text = "INVALID: %s  |  Remove: MMB/X/LT  |  Exit: RMB/B" % reason
+		_build_status_label.text = "INVALID: %s  |  Tier: G/D-Down  |  Remove: MMB/X/LT  |  Exit: RMB/B" % reason
 		_build_status_label.modulate = Color(0.98, 0.42, 0.42)
 
 

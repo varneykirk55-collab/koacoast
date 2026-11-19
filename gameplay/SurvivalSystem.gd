@@ -106,13 +106,13 @@ func _process(_delta: float) -> void:
 	if modal_open:
 		_current_target.clear()
 		hud.set_interaction_prompt("")
-		hud.update_build_hud(false, database.building_piece_order, buildings.selected_index, database, inventory, {})
+		hud.update_build_hud(false, database.building_piece_order, buildings.selected_index, buildings.selected_material_id, database, inventory, {})
 		return
 
 	if buildings.build_mode:
-		hud.update_build_hud(true, database.building_piece_order, buildings.selected_index, database, inventory, buildings.get_preview_status())
+		hud.update_build_hud(true, database.building_piece_order, buildings.selected_index, buildings.selected_material_id, database, inventory, buildings.get_preview_status())
 	else:
-		hud.update_build_hud(false, database.building_piece_order, buildings.selected_index, database, inventory, {})
+		hud.update_build_hud(false, database.building_piece_order, buildings.selected_index, buildings.selected_material_id, database, inventory, {})
 
 	_update_interaction_target(facing)
 
@@ -191,7 +191,10 @@ func _handle_build_input(event: InputEvent) -> bool:
 		if res["ok"]:
 			audio.play(&"build")
 			var pdef := database.get_building_piece(res["piece_id"])
-			hud.push_toast("Placed %s" % (pdef.display_name if pdef else "Structure"), Color(0.75, 0.96, 0.72))
+			var mdef := database.get_building_material(res.get("material_id", &"wood"))
+			var mname := mdef.display_name if mdef else ""
+			var pname := pdef.display_name if pdef else "Structure"
+			hud.push_toast("Placed %s %s" % [mname, pname], Color(0.75, 0.96, 0.72))
 		else:
 			audio.play(&"error")
 			hud.push_toast(String(res.get("reason", "Cannot place here")), Color(0.98, 0.45, 0.45))
@@ -216,6 +219,11 @@ func _handle_build_input(event: InputEvent) -> bool:
 		return true
 	if event.is_action_pressed("build_next_piece"):
 		buildings.cycle_piece(1)
+		return true
+	if event.is_action_pressed("build_cycle_material"):
+		buildings.cycle_material(1)
+		var mdef := database.get_building_material(buildings.selected_material_id)
+		hud.push_toast("Build Material: %s" % (mdef.display_name if mdef else String(buildings.selected_material_id)), Color(0.84, 0.92, 0.98))
 		return true
 	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
 		var mb := event as InputEventMouseButton

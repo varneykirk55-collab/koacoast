@@ -39,7 +39,7 @@ const RESOURCE_PROFILES := {
 	&"grass": {
 		"label": "Island Grass",
 		"respawn": 60.0,
-		"tool_kind": &"",
+		"tool_kind": &"foliage",
 		"drops": [
 			{ "item_id": &"plant_fiber", "min": 2, "max": 3 },
 		],
@@ -47,7 +47,7 @@ const RESOURCE_PROFILES := {
 	&"tropical_plant": {
 		"label": "Tropical Plant",
 		"respawn": 60.0,
-		"tool_kind": &"",
+		"tool_kind": &"foliage",
 		"drops": [
 			{ "item_id": &"leaves", "min": 2, "max": 2 },
 			{ "item_id": &"plant_fiber", "min": 1, "max": 1 },
@@ -165,6 +165,8 @@ func harvest(target: Dictionary) -> Dictionary:
 		var amt := rng.randi_range(int(d["min"]), int(d["max"]))
 		if idx == 0 and tool_bonus > 0:
 			amt += tool_bonus
+		elif idx > 0 and tool_bonus >= 2:
+			amt += 1 if kind == &"tree" else tool_bonus
 		drops.append({ "item_id": item_id, "amount": amt })
 
 	# Verify inventory can accept the primary drop before depleting.

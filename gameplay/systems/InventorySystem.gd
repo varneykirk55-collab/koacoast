@@ -71,7 +71,7 @@ func get_tool_bonus(tool_kind: StringName) -> int:
 		if slot.is_empty():
 			continue
 		var def := database.get_item(StringName(slot.get("item_id", "")))
-		if def and def.tool_kind == tool_kind:
+		if def and (def.tool_kind == tool_kind or def.tool_kind == &"all"):
 			best = maxi(best, def.tool_bonus)
 	return best
 
@@ -212,6 +212,8 @@ func deserialize(data: Dictionary) -> void:
 			continue
 		var idx := int(entry.get("slot", -1))
 		var item_id := StringName(String(entry.get("item_id", "")))
+		if item_id == &"wood_gathering_tool":
+			item_id = &"stone_axe"
 		var amt := int(entry.get("amount", 0))
 		var def := database.get_item(item_id) if database else null
 		if def == null or amt <= 0:

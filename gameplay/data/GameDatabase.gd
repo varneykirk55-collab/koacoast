@@ -9,8 +9,10 @@ var items: Dictionary = {}
 var recipes: Array[RecipeDef] = []
 var recipes_by_id: Dictionary = {}
 var building_materials: Dictionary = {}
+var building_material_order: Array[StringName] = [&"thatch", &"wood", &"stone"]
 var building_pieces: Dictionary = {}
 var building_piece_order: Array[StringName] = []
+var building_item_map: Dictionary = {} # "mat:piece" -> item_id
 var collectibles: Dictionary = {}
 var _icon_cache: Dictionary = {}
 
@@ -39,6 +41,33 @@ func get_building_piece(id: StringName) -> BuildingPieceDef:
 	return building_pieces.get(id, null) as BuildingPieceDef
 
 
+func get_building_item_id(piece_id: StringName, material_id: StringName) -> StringName:
+	var key := "%s:%s" % [String(material_id), String(piece_id)]
+	if building_item_map.has(key):
+		return building_item_map[key]
+	return &""
+
+
+func get_recipe_category(rec: RecipeDef) -> StringName:
+	if rec == null:
+		return &"other"
+	var def := get_item(rec.output_item_id)
+	if def == null:
+		return &"other"
+	if def.category == &"tool":
+		return &"tool"
+	if def.category == &"component":
+		return &"component"
+	if def.category == &"building":
+		var id_str := String(def.id)
+		if id_str.begins_with("thatch_"):
+			return &"thatch"
+		if id_str.begins_with("stone_"):
+			return &"stone"
+		return &"wood"
+	return &"other"
+
+
 func get_collectible(id: StringName) -> CollectibleDef:
 	return collectibles.get(id, null) as CollectibleDef
 
@@ -54,47 +83,94 @@ func get_item_icon(id: StringName) -> Texture2D:
 
 func _register_items() -> void:
 	var rows := [
-		[&"wood", "Wood", "Sturdy island timber gathered from koa trees and fallen branches.", &"resource", 99, Color(0.58, 0.38, 0.21), &"wood", &"", &"", 0],
-		[&"stone", "Stone", "Dense volcanic basalt gathered from coastal boulders and rocky outcrops.", &"resource", 99, Color(0.47, 0.50, 0.54), &"stone", &"", &"", 0],
-		[&"plant_fiber", "Plant Fiber", "Tough fibrous strands stripped from coastal sedge and valley grasses.", &"resource", 99, Color(0.54, 0.69, 0.32), &"fiber", &"", &"", 0],
-		[&"leaves", "Leaves", "Broad tropical fronds and palm leaves useful for roofing and shelter.", &"resource", 99, Color(0.24, 0.62, 0.28), &"leaf", &"", &"", 0],
-		[&"shark_tooth", "Shark Tooth", "A serrated tiger shark tooth found sparkling along black-sand beaches. Future material for a traditional leiomano.", &"collectible", 99, Color(0.92, 0.89, 0.80), &"tooth", &"", &"", 0],
-		[&"stone_gathering_tool", "Stone Gathering Tool", "Lashed basalt pick for breaking boulders. Increases Stone gained when harvesting rocks.", &"tool", 1, Color(0.60, 0.64, 0.68), &"pick", &"", &"stone", 2],
-		[&"wood_gathering_tool", "Wood Gathering Tool", "Heavy stone hatchet lashed to a koa handle. Increases Wood gained from trees and branches.", &"tool", 1, Color(0.68, 0.45, 0.25), &"axe", &"", &"wood", 2],
-		[&"wood_foundation", "Wooden Foundation", "Elevated timber platform with support pilings for level building on slopes, valleys, or beaches.", &"building", 50, Color(0.64, 0.44, 0.24), &"foundation", &"foundation", &"", 0],
-		[&"wood_floor", "Wooden Floor", "Timber deck slab for upper stories or bridged walkways.", &"building", 50, Color(0.72, 0.52, 0.30), &"floor", &"floor", &"", 0],
-		[&"wood_wall", "Wooden Wall", "Full-height timber wall panel that snaps to foundation and floor edges.", &"building", 50, Color(0.61, 0.41, 0.22), &"wall", &"wall", &"", 0],
-		[&"wood_doorway", "Wooden Doorway", "Framed timber wall with a central opening sized for a hinged door.", &"building", 50, Color(0.66, 0.46, 0.26), &"doorway", &"doorway", &"", 0],
-		[&"wood_door", "Wooden Door", "Hinged plank door that snaps into doorways and opens with Interact.", &"building", 50, Color(0.52, 0.33, 0.18), &"door", &"door", &"", 0],
-		[&"wood_roof", "Wooden Roof", "Sloped timber roof section that caps walls and upper floors.", &"building", 50, Color(0.50, 0.34, 0.19), &"roof", &"roof", &"", 0],
-		[&"wood_stairs", "Wooden Stairs", "Timber staircase for climbing between terrain, foundations, and upper floors.", &"building", 50, Color(0.68, 0.48, 0.27), &"stairs", &"stairs", &"", 0],
+		[&"wood", "Wood", "Sturdy island timber gathered from koa trees and fallen branches. Used for tool handles and construction.", &"resource", 99, Color(0.58, 0.38, 0.21), &"wood", &"", &"", 0],
+		[&"stone", "Stone", "Dense volcanic basalt gathered from coastal boulders. Used for stone tools and heavy stone structures.", &"resource", 99, Color(0.47, 0.50, 0.54), &"stone", &"", &"", 0],
+		[&"plant_fiber", "Plant Fiber", "Tough fibrous strands from island grass. Used for bindings and spun into Fiber Rope.", &"resource", 99, Color(0.54, 0.69, 0.32), &"fiber", &"", &"", 0],
+		[&"leaves", "Leaves", "Broad tropical fronds and palm leaves. Used for thatch roofs, thatch walls, and natural shelters.", &"resource", 99, Color(0.24, 0.62, 0.28), &"leaf", &"", &"", 0],
+		[&"shark_tooth", "Shark Tooth", "Serrated tiger shark tooth found sparkling along black-sand beaches. Future material for a traditional leiomano.", &"collectible", 99, Color(0.92, 0.89, 0.80), &"tooth", &"", &"", 0],
+		[&"rope", "Fiber Rope", "Braided plant-fiber cordage. Essential binding for advanced tools, doors, and sturdy foundations.", &"component", 99, Color(0.76, 0.68, 0.42), &"rope", &"", &"", 0],
+		[&"stone_gathering_tool", "Stone Gathering Tool", "Starter lashed basalt multi-tool. +1 bonus yield on all gathered resources (Wood, Stone, Fiber, Leaves).", &"tool", 1, Color(0.62, 0.66, 0.68), &"pick", &"", &"all", 1],
+		[&"stone_axe", "Stone Axe", "Balanced basalt hatchet on a koa handle. +3 Wood and +1 Leaves from trees and fallen branches.", &"tool", 1, Color(0.74, 0.48, 0.26), &"axe", &"", &"wood", 3],
+		[&"stone_pickaxe", "Stone Pickaxe", "Pointed volcanic basalt pick. +3 Stone when mining rocks and coastal boulders.", &"tool", 1, Color(0.54, 0.62, 0.72), &"pick", &"", &"stone", 3],
+		[&"harvest_knife", "Basalt Harvest Knife", "Sharp chipped-basalt blade with leaf-wrapped grip. +2 Plant Fiber and +2 Leaves from vegetation.", &"tool", 1, Color(0.42, 0.72, 0.44), &"knife", &"", &"foliage", 2],
 	]
 	for r: Array in rows:
-		var item := ItemDef.new()
-		item.id = r[0]
-		item.display_name = r[1]
-		item.description = r[2]
-		item.category = r[3]
-		item.max_stack = r[4]
-		item.icon_color = r[5]
-		item.icon_shape = r[6]
-		item.placeable_piece_id = r[7]
-		item.tool_kind = r[8]
-		item.tool_bonus = r[9]
-		items[item.id] = item
+		_add_item(r)
+
+	# Register building piece items across Thatch, Wood, and Stone tiers.
+	var building_defs := [
+		# Thatch tier (leaves + plant fiber + light wood framing)
+		[&"thatch_floor", "Thatch Floor", "Lightweight woven frond deck for simple shelters. Material: Thatch.", &"thatch", &"floor", Color(0.72, 0.63, 0.34), &"floor"],
+		[&"thatch_wall", "Thatch Wall", "Woven palm-frond wall panel framed with wood and fiber. Material: Thatch.", &"thatch", &"wall", Color(0.69, 0.60, 0.32), &"wall"],
+		[&"thatch_doorway", "Thatch Doorway", "Woven thatch wall with an open doorway frame. Material: Thatch.", &"thatch", &"doorway", Color(0.70, 0.61, 0.33), &"doorway"],
+		[&"thatch_door", "Thatch Door", "Woven frond hinged door bound with Fiber Rope. Material: Thatch.", &"thatch", &"door", Color(0.64, 0.54, 0.28), &"door"],
+		[&"thatch_roof", "Thatch Roof", "Traditional pitched tropical leaf roof that sheds rain. Material: Thatch.", &"thatch", &"roof", Color(0.74, 0.65, 0.35), &"roof"],
+		# Wood tier
+		[&"wood_foundation", "Wooden Foundation", "Elevated timber platform with support pilings for slopes and beaches. Material: Wood.", &"wood", &"foundation", Color(0.64, 0.44, 0.24), &"foundation"],
+		[&"wood_floor", "Wooden Floor", "Timber deck slab for upper stories or walkways. Material: Wood.", &"wood", &"floor", Color(0.72, 0.52, 0.30), &"floor"],
+		[&"wood_wall", "Wooden Wall", "Full-height timber wall panel. Material: Wood.", &"wood", &"wall", Color(0.61, 0.41, 0.22), &"wall"],
+		[&"wood_doorway", "Wooden Doorway", "Timber wall frame with doorway opening. Material: Wood.", &"wood", &"doorway", Color(0.66, 0.46, 0.26), &"doorway"],
+		[&"wood_door", "Wooden Door", "Hinged timber plank door bound with Fiber Rope. Opens with Interact. Material: Wood.", &"wood", &"door", Color(0.52, 0.33, 0.18), &"door"],
+		[&"wood_roof", "Wooden Roof", "Sloped timber roof section insulated with tropical leaves. Material: Wood.", &"wood", &"roof", Color(0.50, 0.34, 0.19), &"roof"],
+		[&"wood_stairs", "Wooden Stairs", "Timber staircase connecting terrain, foundations, and upper floors. Material: Wood.", &"wood", &"stairs", Color(0.68, 0.48, 0.27), &"stairs"],
+		# Stone tier
+		[&"stone_foundation", "Stone Foundation", "Heavy volcanic basalt foundation with deep corner pilings. Material: Stone.", &"stone", &"foundation", Color(0.45, 0.48, 0.52), &"foundation"],
+		[&"stone_floor", "Stone Floor", "Cut basalt slab reinforced with timber beams. Material: Stone.", &"stone", &"floor", Color(0.50, 0.53, 0.57), &"floor"],
+		[&"stone_wall", "Stone Wall", "Thick mortared basalt wall for durable shelters. Material: Stone.", &"stone", &"wall", Color(0.43, 0.46, 0.50), &"wall"],
+		[&"stone_doorway", "Stone Doorway", "Basalt archway sized for wooden or thatch doors. Material: Stone.", &"stone", &"doorway", Color(0.46, 0.49, 0.53), &"doorway"],
+		[&"stone_roof", "Stone Roof", "Reinforced slate-and-timber roof built for coastal winds. Material: Stone.", &"stone", &"roof", Color(0.40, 0.43, 0.47), &"roof"],
+		[&"stone_stairs", "Stone Stairs", "Solid carved basalt staircase for multi-tier bases. Material: Stone.", &"stone", &"stairs", Color(0.48, 0.51, 0.55), &"stairs"],
+	]
+	for b: Array in building_defs:
+		_add_item([b[0], b[1], b[2], &"building", 50, b[5], b[6], b[4], &"", 0])
+		building_item_map["%s:%s" % [String(b[3]), String(b[4])]] = b[0]
+
+
+func _add_item(r: Array) -> void:
+	var item := ItemDef.new()
+	item.id = r[0]
+	item.display_name = r[1]
+	item.description = r[2]
+	item.category = r[3]
+	item.max_stack = r[4]
+	item.icon_color = r[5]
+	item.icon_shape = r[6]
+	item.placeable_piece_id = r[7]
+	item.tool_kind = r[8]
+	item.tool_bonus = r[9]
+	items[item.id] = item
 
 
 func _register_recipes() -> void:
 	var rows := [
+		# Components
+		[&"craft_rope", "Fiber Rope (x2)", &"rope", 2, &"hand", [{ "item_id": &"plant_fiber", "amount": 3 }]],
+		# Tool progression
 		[&"craft_stone_tool", "Stone Gathering Tool", &"stone_gathering_tool", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"stone", "amount": 2 }, { "item_id": &"plant_fiber", "amount": 2 }]],
-		[&"craft_wood_tool", "Wood Gathering Tool", &"wood_gathering_tool", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"stone", "amount": 3 }, { "item_id": &"plant_fiber", "amount": 2 }]],
-		[&"craft_foundation", "Wooden Foundation", &"wood_foundation", 1, &"hand", [{ "item_id": &"wood", "amount": 4 }, { "item_id": &"plant_fiber", "amount": 2 }]],
+		[&"craft_stone_axe", "Stone Axe", &"stone_axe", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"stone", "amount": 3 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_stone_pickaxe", "Stone Pickaxe", &"stone_pickaxe", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"stone", "amount": 4 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_harvest_knife", "Basalt Harvest Knife", &"harvest_knife", 1, &"hand", [{ "item_id": &"wood", "amount": 1 }, { "item_id": &"stone", "amount": 2 }, { "item_id": &"rope", "amount": 1 }, { "item_id": &"leaves", "amount": 2 }]],
+		# Thatch building tier
+		[&"craft_thatch_floor", "Thatch Floor", &"thatch_floor", 1, &"hand", [{ "item_id": &"leaves", "amount": 4 }, { "item_id": &"plant_fiber", "amount": 2 }, { "item_id": &"wood", "amount": 1 }]],
+		[&"craft_thatch_wall", "Thatch Wall", &"thatch_wall", 1, &"hand", [{ "item_id": &"leaves", "amount": 4 }, { "item_id": &"plant_fiber", "amount": 2 }, { "item_id": &"wood", "amount": 1 }]],
+		[&"craft_thatch_doorway", "Thatch Doorway", &"thatch_doorway", 1, &"hand", [{ "item_id": &"leaves", "amount": 3 }, { "item_id": &"plant_fiber", "amount": 2 }, { "item_id": &"wood", "amount": 1 }]],
+		[&"craft_thatch_door", "Thatch Door", &"thatch_door", 1, &"hand", [{ "item_id": &"leaves", "amount": 3 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_thatch_roof", "Thatch Roof", &"thatch_roof", 1, &"hand", [{ "item_id": &"leaves", "amount": 5 }, { "item_id": &"plant_fiber", "amount": 2 }]],
+		# Wood building tier
+		[&"craft_foundation", "Wooden Foundation", &"wood_foundation", 1, &"hand", [{ "item_id": &"wood", "amount": 4 }, { "item_id": &"rope", "amount": 1 }]],
 		[&"craft_floor", "Wooden Floor", &"wood_floor", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"plant_fiber", "amount": 1 }]],
-		[&"craft_wall", "Wooden Wall", &"wood_wall", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"leaves", "amount": 2 }]],
+		[&"craft_wall", "Wooden Wall", &"wood_wall", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"plant_fiber", "amount": 2 }]],
 		[&"craft_doorway", "Wooden Doorway", &"wood_doorway", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"plant_fiber", "amount": 1 }]],
-		[&"craft_door", "Wooden Door", &"wood_door", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"plant_fiber", "amount": 2 }]],
-		[&"craft_roof", "Wooden Roof", &"wood_roof", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"leaves", "amount": 3 }]],
-		[&"craft_stairs", "Wooden Stairs", &"wood_stairs", 1, &"hand", [{ "item_id": &"wood", "amount": 4 }, { "item_id": &"plant_fiber", "amount": 2 }]],
+		[&"craft_door", "Wooden Door", &"wood_door", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_roof", "Wooden Roof", &"wood_roof", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"leaves", "amount": 2 }, { "item_id": &"plant_fiber", "amount": 1 }]],
+		[&"craft_stairs", "Wooden Stairs", &"wood_stairs", 1, &"hand", [{ "item_id": &"wood", "amount": 4 }, { "item_id": &"rope", "amount": 1 }]],
+		# Stone building tier
+		[&"craft_stone_foundation", "Stone Foundation", &"stone_foundation", 1, &"hand", [{ "item_id": &"stone", "amount": 5 }, { "item_id": &"wood", "amount": 2 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_stone_floor", "Stone Floor", &"stone_floor", 1, &"hand", [{ "item_id": &"stone", "amount": 4 }, { "item_id": &"wood", "amount": 2 }]],
+		[&"craft_stone_wall", "Stone Wall", &"stone_wall", 1, &"hand", [{ "item_id": &"stone", "amount": 5 }, { "item_id": &"wood", "amount": 1 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_stone_doorway", "Stone Doorway", &"stone_doorway", 1, &"hand", [{ "item_id": &"stone", "amount": 4 }, { "item_id": &"wood", "amount": 2 }, { "item_id": &"rope", "amount": 1 }]],
+		[&"craft_stone_roof", "Stone Roof", &"stone_roof", 1, &"hand", [{ "item_id": &"stone", "amount": 5 }, { "item_id": &"wood", "amount": 2 }, { "item_id": &"leaves", "amount": 2 }]],
+		[&"craft_stone_stairs", "Stone Stairs", &"stone_stairs", 1, &"hand", [{ "item_id": &"stone", "amount": 6 }, { "item_id": &"wood", "amount": 2 }, { "item_id": &"rope", "amount": 1 }]],
 	]
 	for r: Array in rows:
 		var rec := RecipeDef.new()
@@ -112,13 +188,19 @@ func _register_recipes() -> void:
 
 
 func _register_building_materials() -> void:
-	var wood := BuildingMaterialDef.new()
-	wood.id = &"wood"
-	wood.display_name = "Wood"
-	wood.albedo_color = Color(0.56, 0.37, 0.21)
-	wood.accent_color = Color(0.37, 0.23, 0.12)
-	wood.roughness = 0.85
-	building_materials[wood.id] = wood
+	var mat_rows := [
+		[&"thatch", "Thatch", Color(0.68, 0.59, 0.31), Color(0.47, 0.40, 0.19), 0.92],
+		[&"wood", "Wood", Color(0.56, 0.37, 0.21), Color(0.37, 0.23, 0.12), 0.85],
+		[&"stone", "Stone", Color(0.41, 0.43, 0.46), Color(0.26, 0.28, 0.31), 0.90],
+	]
+	for r: Array in mat_rows:
+		var mat := BuildingMaterialDef.new()
+		mat.id = r[0]
+		mat.display_name = r[1]
+		mat.albedo_color = r[2]
+		mat.accent_color = r[3]
+		mat.roughness = r[4]
+		building_materials[mat.id] = mat
 
 
 func _register_building_pieces() -> void:
@@ -197,6 +279,14 @@ func _generate_icon(def: ItemDef) -> Texture2D:
 		&"axe":
 			_draw_line(img, Vector2(12, 37), Vector2(33, 16), Color(0.55, 0.36, 0.20), 3)
 			_fill_rect(img, 24, 11, 37, 23, Color(0.75, 0.78, 0.82))
+		&"rope":
+			_fill_polygon_circle(img, Vector2(24, 24), 13.0, col)
+			_fill_polygon_circle(img, Vector2(24, 24), 6.0, Color(0.09, 0.12, 0.15, 1.0))
+			_draw_line(img, Vector2(29, 31), Vector2(38, 38), light, 3)
+		&"knife":
+			_draw_line(img, Vector2(12, 36), Vector2(22, 26), Color(0.48, 0.33, 0.18), 3)
+			_draw_line(img, Vector2(21, 27), Vector2(37, 11), Color(0.76, 0.80, 0.84), 4)
+			_fill_rect(img, 18, 24, 24, 30, col)
 		&"foundation":
 			_fill_rect(img, 9, 18, 39, 27, col)
 			_fill_rect(img, 11, 27, 15, 38, dark)

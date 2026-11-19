@@ -61,7 +61,7 @@ func _ready() -> void:
 		+ "Jump: Space / A   |   Sprint: Shift / L3\n"
 		+ "Interact / Gather: E / X   |   Bag & Craft: I or Tab / Y\n"
 		+ "Build Mode: B / D-Pad Up   |   Island Map: M / Back\n"
-		+ "Build Place: LMB or F / RT   |   Rotate: R / LB RB   |   Remove: MMB or X / LT"
+		+ "Build Place: LMB or F / RT   |   Rotate: R / LB RB   |   Tier: G / D-Down   |   Remove: MMB or X / LT"
 	)
 	vbox.add_child(controls)
 

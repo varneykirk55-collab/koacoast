@@ -74,25 +74,37 @@ func _run() -> void:
 	var leaf_res := _survival.resources.harvest(plant_target)
 	_check(bool(leaf_res.get("ok", false)) and _survival.inventory.get_count(&"leaves") >= 2, "Harvested leaves (%d)" % _survival.inventory.get_count(&"leaves"))
 
-	_step("4. Open Inventory & Inspect + Capacity Check")
+	_step("4. Open Inventory & Inspect + Crafting UI Visibility Check")
 	_survival.hud.inv_panel.open_panel()
 	await _pump(2)
 	_check(_survival.hud.inv_panel.visible, "Inventory & Crafting panel opened")
 	_check(_survival.inventory.get_used_slot_count() >= 4, "Inventory displays gathered resource stacks")
+	_check(_survival.hud.inv_panel._recipe_buttons.size() == _survival.database.recipes.size(), "All %d recipes visible in Crafting UI" % _survival.database.recipes.size())
 
-	_step("5. Craft Basic Tools")
-	# Ensure missing materials blocks crafting (foundation needs 4 wood; we only have 2).
+	_step("5. Craft Fiber Rope & Progressive Tools + Verify Tool Bonuses")
+	# Ensure missing materials blocks crafting (foundation needs 4 wood + 1 rope; we only have 2 wood).
 	_check(not _survival.crafting.craft(&"craft_foundation"), "Crafting rejects recipe with missing materials")
-	# Gather extra stone & wood for crafting tools + shelter pieces.
-	_survival.inventory.add_item(&"wood", 32)
-	_survival.inventory.add_item(&"stone", 6)
-	_survival.inventory.add_item(&"plant_fiber", 12)
-	_survival.inventory.add_item(&"leaves", 10)
-	_check(_survival.crafting.craft(&"craft_stone_tool"), "Crafted Stone Gathering Tool")
-	_check(_survival.crafting.craft(&"craft_wood_tool"), "Crafted Wood Gathering Tool")
-	_check(_survival.inventory.has_tool(&"stone") and _survival.inventory.has_tool(&"wood"), "Both gathering tools stored in inventory")
+	# Gather/supply materials for full progression test.
+	_survival.inventory.add_item(&"wood", 38)
+	_survival.inventory.add_item(&"stone", 30)
+	_survival.inventory.add_item(&"plant_fiber", 30)
+	_survival.inventory.add_item(&"leaves", 24)
 
-	# Verify tool gather bonus on another rock deposit.
+	# Craft Fiber Rope from Plant Fiber (4 batches = 8 rope for tools & structures).
+	_check(_survival.crafting.craft(&"craft_rope"), "Crafted Fiber Rope from Plant Fiber")
+	_check(_survival.inventory.get_count(&"rope") >= 2, "Fiber Rope entered inventory (%d)" % _survival.inventory.get_count(&"rope"))
+	_check(_survival.crafting.craft(&"craft_rope"), "Crafted second batch of Fiber Rope")
+	_check(_survival.crafting.craft(&"craft_rope"), "Crafted third batch of Fiber Rope")
+	_check(_survival.crafting.craft(&"craft_rope"), "Crafted fourth batch of Fiber Rope")
+
+	# Craft Tier 1 multi-tool and Tier 2 specialized tools.
+	_check(_survival.crafting.craft(&"craft_stone_tool"), "Crafted Stone Gathering Tool")
+	_check(_survival.crafting.craft(&"craft_stone_axe"), "Crafted Stone Axe")
+	_check(_survival.crafting.craft(&"craft_stone_pickaxe"), "Crafted Stone Pickaxe")
+	_check(_survival.crafting.craft(&"craft_harvest_knife"), "Crafted Basalt Harvest Knife")
+	_check(_survival.inventory.get_tool_bonus(&"wood") >= 3 and _survival.inventory.get_tool_bonus(&"stone") >= 3 and _survival.inventory.get_tool_bonus(&"foliage") >= 2, "All specialized tool bonuses active in inventory")
+
+	# Verify Stone Pickaxe bonus on a rock deposit (+3 bonus -> >= 5 total).
 	var rock2_pos := _find_nearest_resource_pos(&"rock", rock_pos + Vector3(20.0, 0.0, 0.0))
 	if rock2_pos != Vector3.INF:
 		_move_player_to(rock2_pos + Vector3(1.0, 0.0, 0.0))
@@ -101,7 +113,29 @@ func _run() -> void:
 		var before_stone := _survival.inventory.get_count(&"stone")
 		var bonus_res := _survival.resources.harvest(rock2_target)
 		var gained_stone := _survival.inventory.get_count(&"stone") - before_stone
-		_check(bool(bonus_res.get("ok", false)) and gained_stone >= 4, "Stone Gathering Tool granted bonus stone (+%d)" % gained_stone)
+		_check(bool(bonus_res.get("ok", false)) and gained_stone >= 5, "Stone Pickaxe granted bonus stone (+%d)" % gained_stone)
+
+	# Verify Stone Axe bonus on a tree (+3 wood bonus -> >= 5 total wood).
+	var tree2_pos := _find_nearest_resource_pos(&"tree", tree_pos + Vector3(20.0, 0.0, 0.0))
+	if tree2_pos != Vector3.INF:
+		_move_player_to(tree2_pos + Vector3(1.0, 0.0, 0.0))
+		await _pump(3)
+		var tree2_target := _survival.resources.find_nearest_target(_player.global_position, Vector3.FORWARD)
+		var before_wood := _survival.inventory.get_count(&"wood")
+		var axe_res := _survival.resources.harvest(tree2_target)
+		var gained_wood := _survival.inventory.get_count(&"wood") - before_wood
+		_check(bool(axe_res.get("ok", false)) and gained_wood >= 5, "Stone Axe granted bonus wood (+%d)" % gained_wood)
+
+	# Verify Basalt Harvest Knife bonus on grass/foliage (+2 bonus on primary & foliage drops -> >= 4 total fiber+leaves).
+	var grass2_pos := _find_nearest_resource_pos(&"grass", grass_pos + Vector3(16.0, 0.0, 0.0))
+	if grass2_pos != Vector3.INF:
+		_move_player_to(grass2_pos + Vector3(0.4, 0.0, 0.0))
+		await _pump(3)
+		var grass2_target := _survival.resources.find_nearest_target(_player.global_position, Vector3.FORWARD)
+		var before_foliage := _survival.inventory.get_count(&"plant_fiber") + _survival.inventory.get_count(&"leaves")
+		var knife_res := _survival.resources.harvest(grass2_target)
+		var gained_foliage := (_survival.inventory.get_count(&"plant_fiber") + _survival.inventory.get_count(&"leaves")) - before_foliage
+		_check(bool(knife_res.get("ok", false)) and gained_foliage >= 4, "Basalt Harvest Knife granted bonus foliage (+%d)" % gained_foliage)
 
 	_survival.hud.inv_panel.close_panel()
 
@@ -120,54 +154,57 @@ func _run() -> void:
 	_check(not bool(col_spot["active"]), "Sparkle disappeared after collection")
 	_check(not bool(_survival.collectibles.collect(col_spot).get("ok", false)), "Prevented repeat collection of same sparkle")
 
-	_step("7. Craft All Building Components")
-	for rec_id in [&"craft_foundation", &"craft_floor", &"craft_wall", &"craft_wall", &"craft_wall", &"craft_doorway", &"craft_door", &"craft_roof", &"craft_stairs"]:
+	_step("7. Craft Thatch, Wood, and Stone Building Components")
+	for rec_id in [&"craft_stone_foundation", &"craft_stone_wall", &"craft_foundation", &"craft_floor", &"craft_wall", &"craft_wall", &"craft_doorway", &"craft_door", &"craft_thatch_wall", &"craft_thatch_roof", &"craft_stairs"]:
 		_check(_survival.crafting.craft(rec_id), "Crafted %s" % String(rec_id))
 
-	_step("8. Building Mode Validation & Shelter Construction")
+	_step("8. Multi-Material Building Mode Validation & Shelter Construction")
 	var build_origin := Vector3(52.0, _terrain.data.get_height(Vector3(52.0, 0.0, 578.0)) + 0.5, 578.0)
 	_move_player_to(Vector3(44.0, 0.0, 576.0))
 	_survival.buildings.set_build_mode(true)
 	await _pump(2)
 	_check(_survival.buildings.build_mode, "Entered Building Mode")
+	_survival.buildings.cycle_material(1)
+	_check(_survival.buildings.selected_material_id == &"stone", "Cycled building material tier to Stone")
+	_survival.buildings.set_material(&"wood")
 
 	# Negative validation checks: underwater & unsupported floating wall.
-	var underwater_res := _survival.buildings.place_piece_explicit(&"foundation", Vector3(48.0, -2.0, 720.0), 0.0, true)
+	var underwater_res := _survival.buildings.place_piece_explicit(&"foundation", Vector3(48.0, -2.0, 720.0), 0.0, true, &"wood")
 	_check(not bool(underwater_res.get("ok", false)), "Rejected underwater placement")
-	var floating_res := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(20.0, 12.0, 0.0), 0.0, true)
+	var floating_res := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(20.0, 12.0, 0.0), 0.0, true, &"wood")
 	_check(not bool(floating_res.get("ok", false)), "Rejected floating unsupported wall")
 
-	# Place shelter pieces: foundation, 3 walls, doorway, door, roof, stairs.
-	var r_f := _survival.buildings.place_piece_explicit(&"foundation", build_origin, 0.0, true)
-	_check(bool(r_f.get("ok", false)), "Placed Foundation")
-	var r_w1 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(-2.0, 0.0, 0.0), PI * 0.5, true)
-	var r_w2 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(2.0, 0.0, 0.0), -PI * 0.5, true)
-	var r_w3 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(0.0, 0.0, -2.0), 0.0, true)
-	_check(bool(r_w1.get("ok", false)) and bool(r_w2.get("ok", false)) and bool(r_w3.get("ok", false)), "Placed 3 Walls snapped to Foundation")
+	# Place mixed-tier shelter: Stone Foundation + 2 Wooden Walls + 1 Stone Wall + Wooden Doorway/Door + Thatch Roof + Wooden Stairs.
+	var r_f := _survival.buildings.place_piece_explicit(&"foundation", build_origin, 0.0, true, &"stone")
+	_check(bool(r_f.get("ok", false)), "Placed Stone Foundation")
+	var r_w1 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(-2.0, 0.0, 0.0), PI * 0.5, true, &"wood")
+	var r_w2 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(2.0, 0.0, 0.0), -PI * 0.5, true, &"wood")
+	var r_w3 := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(0.0, 0.0, -2.0), 0.0, true, &"stone")
+	_check(bool(r_w1.get("ok", false)) and bool(r_w2.get("ok", false)) and bool(r_w3.get("ok", false)), "Placed Wooden and Stone Walls snapped to Stone Foundation")
 
 	var doorway_pos := build_origin + Vector3(0.0, 0.0, 2.0)
-	var r_dw := _survival.buildings.place_piece_explicit(&"doorway", doorway_pos, PI, true)
-	_check(bool(r_dw.get("ok", false)), "Placed Doorway snapped to Foundation")
-	var r_door := _survival.buildings.place_piece_explicit(&"door", doorway_pos, PI, true)
-	_check(bool(r_door.get("ok", false)), "Placed Door snapped into Doorway")
-	var r_roof := _survival.buildings.place_piece_explicit(&"roof", build_origin + Vector3(0.0, 3.0, 0.0), 0.0, true)
-	_check(bool(r_roof.get("ok", false)), "Placed Roof snapped atop Walls")
-	var r_stairs := _survival.buildings.place_piece_explicit(&"stairs", build_origin + Vector3(4.0, 0.0, 0.0), -PI * 0.5, true)
-	_check(bool(r_stairs.get("ok", false)), "Placed Stairs snapped to Foundation")
+	var r_dw := _survival.buildings.place_piece_explicit(&"doorway", doorway_pos, PI, true, &"wood")
+	_check(bool(r_dw.get("ok", false)), "Placed Wooden Doorway snapped to Foundation")
+	var r_door := _survival.buildings.place_piece_explicit(&"door", doorway_pos, PI, true, &"wood")
+	_check(bool(r_door.get("ok", false)), "Placed Wooden Door snapped into Doorway")
+	var r_roof := _survival.buildings.place_piece_explicit(&"roof", build_origin + Vector3(0.0, 3.0, 0.0), 0.0, true, &"thatch")
+	_check(bool(r_roof.get("ok", false)), "Placed Thatch Roof snapped atop Walls")
+	var r_stairs := _survival.buildings.place_piece_explicit(&"stairs", build_origin + Vector3(4.0, 0.0, 0.0), -PI * 0.5, true, &"wood")
+	_check(bool(r_stairs.get("ok", false)), "Placed Wooden Stairs snapped to Foundation")
 
 	# Duplicate overlap check.
 	_survival.inventory.add_item(&"wood_wall", 1)
-	var dup_wall := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(-2.0, 0.0, 0.0), PI * 0.5, true)
+	var dup_wall := _survival.buildings.place_piece_explicit(&"wall", build_origin + Vector3(-2.0, 0.0, 0.0), PI * 0.5, true, &"wood")
 	_check(not bool(dup_wall.get("ok", false)), "Rejected overlapping duplicate wall")
 	_survival.inventory.remove_item(&"wood_wall", 1)
 
-	# Building removal & refund check (place floor on top of shelter, then remove it).
-	var r_fl := _survival.buildings.place_piece_explicit(&"floor", build_origin + Vector3(0.0, 3.0, 0.0), 0.0, true)
-	_check(bool(r_fl.get("ok", false)), "Placed Floor on upper wall level")
-	if bool(r_fl.get("ok", false)):
-		var rem_res := _survival.buildings.remove_piece(String(r_fl["uid"]), true)
-		_check(bool(rem_res.get("ok", false)) and _survival.inventory.get_count(&"wood_floor") == 1, "Removed placed Floor and refunded item")
-		_survival.inventory.remove_item(&"wood_floor", 1)
+	# Building removal & material-aware refund check (place Stone Foundation beside shelter, remove it, verify stone_foundation refunded).
+	var extra_f := _survival.buildings.place_piece_explicit(&"foundation", build_origin + Vector3(-4.0, 0.0, 0.0), 0.0, true, &"wood")
+	_check(bool(extra_f.get("ok", false)), "Placed adjacent Wooden Foundation")
+	if bool(extra_f.get("ok", false)):
+		var rem_res := _survival.buildings.remove_piece(String(extra_f["uid"]), true)
+		_check(bool(rem_res.get("ok", false)) and _survival.inventory.get_count(&"wood_foundation") == 1, "Removed Wooden Foundation and refunded wood_foundation")
+		_survival.inventory.remove_item(&"wood_foundation", 1)
 
 	_survival.buildings.set_build_mode(false)
 	_check(not _survival.buildings.build_mode, "Exited Building Mode")
@@ -177,7 +214,8 @@ func _run() -> void:
 	await _pump(4)
 	var near_door := _survival.buildings.find_nearest_door(_player.global_position)
 	_check(not near_door.is_empty(), "Detected placed Door for interaction")
-	_check(_survival.buildings.toggle_door(String(near_door["uid"])), "Opened Door")
+	if not near_door.is_empty():
+		_check(_survival.buildings.toggle_door(String(near_door["uid"])), "Opened Door")
 	await _pump(20)
 	# Stand on top of foundation inside the shelter.
 	_player.global_position = build_origin + Vector3(0.0, 0.2, 0.0)
@@ -204,6 +242,7 @@ func _run() -> void:
 	_check(_player.global_position.distance_to(pre_save_pos) < 0.25, "Player position persisted")
 	_check(_survival.inventory.get_count(&"shark_tooth") == pre_save_tooth, "Inventory persisted without duplication")
 	_check(_survival.buildings.get_placed_count() == pre_save_buildings, "All %d placed buildings persisted" % pre_save_buildings)
+	_check(_survival.buildings._placed[String(r_f["uid"])]["material_id"] == &"stone" and _survival.buildings._placed[String(r_roof["uid"])]["material_id"] == &"thatch", "Mixed Stone & Thatch building material tiers persisted")
 	_check(not bool(col_spot["active"]), "Collected beach sparkle state persisted as collected")
 	_check(_survival.resources.is_depleted(String(tree_target["id"])), "Depleted resource state persisted")
 

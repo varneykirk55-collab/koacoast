@@ -6,6 +6,15 @@ extends PanelContainer
 signal close_requested
 signal craft_requested(recipe_id: StringName)
 
+const FILTER_TABS := [
+	[&"all", "All"],
+	[&"tool", "Tools"],
+	[&"component", "Parts"],
+	[&"thatch", "Thatch"],
+	[&"wood", "Wood"],
+	[&"stone", "Stone"],
+]
+
 var _database: GameDatabase
 var _inventory: InventorySystem
 var _crafting: CraftingSystem
@@ -18,6 +27,8 @@ var _detail_icon: TextureRect
 var _detail_name: Label
 var _detail_meta: Label
 var _detail_desc: Label
+var _filter_buttons: Array[Button] = []
+var _active_filter_idx := 0
 var _recipe_list: VBoxContainer
 var _recipe_buttons: Dictionary = {} # StringName -> Button
 var _selected_slot := 0
@@ -26,11 +37,11 @@ var _selected_slot := 0
 func _ready() -> void:
 	visible = false
 	set_anchors_preset(Control.PRESET_CENTER)
-	custom_minimum_size = Vector2(920, 560)
-	offset_left = -460
-	offset_top = -280
-	offset_right = 460
-	offset_bottom = 280
+	custom_minimum_size = Vector2(1020, 580)
+	offset_left = -510
+	offset_top = -290
+	offset_right = 510
+	offset_bottom = 290
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.08, 0.11, 0.14, 0.95)
@@ -167,13 +178,26 @@ func _ready() -> void:
 	# Right: Crafting recipe list.
 	var craft_col := VBoxContainer.new()
 	craft_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	craft_col.size_flags_stretch_ratio = 1.3
 	craft_col.add_theme_constant_override("separation", 8)
 	columns.add_child(craft_col)
 
 	var craft_title := Label.new()
-	craft_title.text = "Crafting Recipes (Click or Press A to Craft)"
-	craft_title.add_theme_font_size_override("font_size", 16)
+	craft_title.text = "Crafting Recipes (A/Click: Craft   LB/RB or [/]: Filter)"
+	craft_title.add_theme_font_size_override("font_size", 15)
 	craft_col.add_child(craft_title)
+
+	var tab_row := HBoxContainer.new()
+	tab_row.add_theme_constant_override("separation", 4)
+	craft_col.add_child(tab_row)
+	for i in FILTER_TABS.size():
+		var tab_btn := Button.new()
+		tab_btn.text = FILTER_TABS[i][1]
+		tab_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tab_btn.focus_mode = Control.FOCUS_ALL
+		tab_btn.pressed.connect(_set_filter.bind(i))
+		tab_row.add_child(tab_btn)
+		_filter_buttons.append(tab_btn)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -230,6 +254,22 @@ func refresh() -> void:
 	_refresh_recipes()
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event.is_action_pressed("craft_tab_prev"):
+		_set_filter(posmod(_active_filter_idx - 1, FILTER_TABS.size()))
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("craft_tab_next"):
+		_set_filter(posmod(_active_filter_idx + 1, FILTER_TABS.size()))
+		get_viewport().set_input_as_handled()
+
+
+func _set_filter(idx: int) -> void:
+	_active_filter_idx = posmod(idx, FILTER_TABS.size())
+	_refresh_recipes()
+
+
 func _build_recipe_rows() -> void:
 	for child in _recipe_list.get_children():
 		child.queue_free()
@@ -238,10 +278,12 @@ func _build_recipe_rows() -> void:
 		return
 	for rec in _crafting.get_recipes(&"hand"):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 56)
+		btn.custom_minimum_size = Vector2(0, 62)
 		btn.focus_mode = Control.FOCUS_ALL
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.pressed.connect(func(): craft_requested.emit(rec.id))
+		btn.focus_entered.connect(_on_recipe_inspected.bind(rec))
+		btn.mouse_entered.connect(_on_recipe_inspected.bind(rec))
 		_recipe_list.add_child(btn)
 
 		var row := HBoxContainer.new()
@@ -272,12 +314,15 @@ func _build_recipe_rows() -> void:
 
 		var req_lbl := Label.new()
 		req_lbl.name = "Reqs"
-		req_lbl.add_theme_font_size_override("font_size", 12)
+		req_lbl.add_theme_font_size_override("font_size", 11)
+		req_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		req_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		info.add_child(req_lbl)
 
 		var status_lbl := Label.new()
 		status_lbl.name = "Status"
+		status_lbl.custom_minimum_size = Vector2(68, 0)
+		status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		status_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		status_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(status_lbl)
@@ -288,10 +333,16 @@ func _build_recipe_rows() -> void:
 func _refresh_recipes() -> void:
 	if _crafting == null or _database == null:
 		return
+	var active_cat: StringName = FILTER_TABS[_active_filter_idx][0]
+	for i in _filter_buttons.size():
+		_filter_buttons[i].modulate = Color(0.62, 0.98, 0.72) if i == _active_filter_idx else Color(0.76, 0.80, 0.84)
+
 	for rec in _crafting.get_recipes(&"hand"):
 		var btn := _recipe_buttons.get(rec.id, null) as Button
 		if btn == null:
 			continue
+		var rec_cat := _database.get_recipe_category(rec)
+		btn.visible = active_cat == &"all" or rec_cat == active_cat
 		var eval := _crafting.evaluate_recipe(rec.id)
 		var craftable := bool(eval["craftable"])
 		var inv_full := bool(eval["inventory_full"])
@@ -322,6 +373,17 @@ func _refresh_recipes() -> void:
 			status_lbl.modulate = Color(0.95, 0.42, 0.42)
 			req_lbl.modulate = Color(0.95, 0.65, 0.65)
 			btn.modulate = Color(0.78, 0.78, 0.80)
+
+
+func _on_recipe_inspected(rec: RecipeDef) -> void:
+	if _database == null or rec == null:
+		return
+	var def := _database.get_item(rec.output_item_id)
+	_detail_icon.texture = _database.get_item_icon(rec.output_item_id)
+	_detail_name.text = rec.display_name
+	var have_out := _inventory.get_count(rec.output_item_id) if _inventory else 0
+	_detail_meta.text = "Crafts: +%d  |  Owned: %d  |  Category: %s" % [rec.output_amount, have_out, String(def.category).capitalize() if def else "Item"]
+	_detail_desc.text = def.description if def else ""
 
 
 func _on_slot_selected(idx: int) -> void:

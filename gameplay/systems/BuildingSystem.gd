@@ -6,6 +6,7 @@ extends Node3D
 
 signal build_mode_changed(active: bool)
 signal selected_piece_changed(piece_id: StringName)
+signal selected_material_changed(material_id: StringName)
 signal piece_placed(uid: String, piece_id: StringName, pos: Vector3)
 signal piece_removed(uid: String, piece_id: StringName)
 
@@ -100,6 +101,24 @@ func rotate_piece(delta_steps: int) -> void:
 	rotation_steps = posmod(rotation_steps + delta_steps, 4)
 
 
+func cycle_material(delta_idx: int) -> void:
+	if _database == null or _database.building_material_order.is_empty():
+		return
+	var order := _database.building_material_order
+	var cur_idx := maxi(0, order.find(selected_material_id))
+	var next_idx := posmod(cur_idx + delta_idx, order.size())
+	set_material(order[next_idx])
+
+
+func set_material(mat_id: StringName) -> void:
+	if _database == null or not _database.building_materials.has(mat_id):
+		return
+	if selected_material_id == mat_id:
+		return
+	selected_material_id = mat_id
+	selected_material_changed.emit(selected_material_id)
+
+
 func get_preview_status() -> Dictionary:
 	return _last_eval
 
@@ -123,15 +142,16 @@ func try_place_current() -> Dictionary:
 	)
 
 
-func place_piece_explicit(piece_id: StringName, pos: Vector3, rot_y: float, consume_item := true) -> Dictionary:
+func place_piece_explicit(piece_id: StringName, pos: Vector3, rot_y: float, consume_item := true, material_id := &"") -> Dictionary:
 	var piece_def := _database.get_building_piece(piece_id) if _database else null
 	if piece_def == null:
 		return { "ok": false, "reason": "Unknown piece" }
+	var mat_id := material_id if material_id != &"" else selected_material_id
 	var support_uid := _find_support_uid(piece_def, pos, rot_y)
-	var eval := _validate_placement(piece_def, pos, rot_y, support_uid, consume_item)
+	var eval := _validate_placement(piece_def, pos, rot_y, support_uid, consume_item, mat_id)
 	if not eval["valid"]:
 		return { "ok": false, "reason": eval["reason"] }
-	return _commit_piece(piece_id, selected_material_id, pos, rot_y, support_uid, consume_item)
+	return _commit_piece(piece_id, mat_id, pos, rot_y, support_uid, consume_item)
 
 
 func try_remove_targeted() -> Dictionary:
@@ -148,6 +168,7 @@ func remove_piece(uid: String, refund := true) -> Dictionary:
 		return { "ok": false, "reason": "Missing piece" }
 	var entry: Dictionary = _placed[uid]
 	var piece_id: StringName = entry["piece_id"]
+	var mat_id: StringName = entry["material_id"]
 	var node: Node3D = entry["node"]
 	_unregister_bodies(node)
 	node.queue_free()
@@ -155,9 +176,12 @@ func remove_piece(uid: String, refund := true) -> Dictionary:
 
 	var refunded := false
 	if refund and _inventory and _database:
-		var def := _database.get_building_piece(piece_id)
-		if def and def.item_id != &"" and _inventory.can_fit(def.item_id, 1):
-			_inventory.add_item(def.item_id, 1)
+		var item_id := _database.get_building_item_id(piece_id, mat_id)
+		if item_id == &"":
+			var def := _database.get_building_piece(piece_id)
+			item_id = def.item_id if def else &""
+		if item_id != &"" and _inventory.can_fit(item_id, 1):
+			_inventory.add_item(item_id, 1)
 			refunded = true
 
 	piece_removed.emit(uid, piece_id)
@@ -259,14 +283,19 @@ func _commit_piece(piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y
 	var piece_def := _database.get_building_piece(piece_id)
 	if piece_def == null:
 		return { "ok": false, "reason": "Unknown piece" }
+	var req_item_id := _database.get_building_item_id(piece_id, mat_id)
+	if req_item_id == &"":
+		return { "ok": false, "reason": "Unsupported material for %s" % piece_def.display_name }
 	if consume_item and _inventory:
-		if not _inventory.remove_item(piece_def.item_id, 1):
-			return { "ok": false, "reason": "Missing %s" % piece_def.display_name }
+		if not _inventory.remove_item(req_item_id, 1):
+			var item_def := _database.get_item(req_item_id)
+			var nm := item_def.display_name if item_def else piece_def.display_name
+			return { "ok": false, "reason": "Missing %s" % nm }
 	var uid := "b_%d" % _next_uid
 	_next_uid += 1
 	_spawn_loaded_piece(uid, piece_id, mat_id, pos, rot_y, support_uid, false)
 	piece_placed.emit(uid, piece_id, pos)
-	return { "ok": true, "uid": uid, "piece_id": piece_id, "pos": pos }
+	return { "ok": true, "uid": uid, "piece_id": piece_id, "material_id": mat_id, "pos": pos }
 
 
 func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y: float, support_uid: String, door_open: bool) -> void:
@@ -314,7 +343,7 @@ func _update_preview() -> void:
 	var pos: Vector3 = target["pos"]
 	var rot_y: float = target["rot_y"]
 	var support_uid: String = target["support_uid"]
-	var eval := _validate_placement(piece_def, pos, rot_y, support_uid, true)
+	var eval := _validate_placement(piece_def, pos, rot_y, support_uid, true, selected_material_id)
 	eval["pos"] = pos
 	eval["rot_y"] = rot_y
 	eval["support_uid"] = support_uid
@@ -430,10 +459,16 @@ func _find_support_uid(piece_def: BuildingPieceDef, pos: Vector3, _rot_y: float)
 	return ""
 
 
-func _validate_placement(piece_def: BuildingPieceDef, pos: Vector3, rot_y: float, support_uid: String, check_inventory: bool) -> Dictionary:
-	if check_inventory and _inventory and piece_def.item_id != &"":
-		if _inventory.get_count(piece_def.item_id) < 1:
-			var item_def := _database.get_item(piece_def.item_id)
+func _validate_placement(piece_def: BuildingPieceDef, pos: Vector3, rot_y: float, support_uid: String, check_inventory: bool, mat_id := &"") -> Dictionary:
+	var active_mat := mat_id if mat_id != &"" else selected_material_id
+	var req_item_id := _database.get_building_item_id(piece_def.id, active_mat) if _database else piece_def.item_id
+	if req_item_id == &"":
+		var mat_def := _database.get_building_material(active_mat) if _database else null
+		var mat_name := mat_def.display_name if mat_def else String(active_mat).capitalize()
+		return { "valid": false, "reason": "%s has no %s piece — press G / D-Down" % [mat_name, piece_def.display_name] }
+	if check_inventory and _inventory:
+		if _inventory.get_count(req_item_id) < 1:
+			var item_def := _database.get_item(req_item_id)
 			var nm := item_def.display_name if item_def else piece_def.display_name
 			return { "valid": false, "reason": "Need 1x %s (craft in Menu)" % nm }
 
