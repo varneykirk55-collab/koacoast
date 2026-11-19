@@ -889,12 +889,18 @@ void fragment() {
 		float crowns = coast_noise(world_xz * 0.26);
 		float cover = canopy * smoothstep(0.21, 0.60, grove);
 		float range_mix = mix(0.38, 0.90, smoothstep(65.0, 380.0, scenic_distance));
-		vec3 forest = mix(vec3(0.034, 0.070, 0.020), vec3(0.125, 0.213, 0.058), crowns);
+		vec3 forest = mix(vec3(0.040, 0.089, 0.030), vec3(0.126, 0.239, 0.077), crowns);
 		albedo = mix(albedo, forest, cover * range_mix);
 		rough = mix(rough, 0.91, cover * range_mix);
 	}
+	// Recover warm minerals in the basalt while keeping the wet black sand dark.
+	float green = smoothstep(0.014, 0.14, albedo.g - 0.5 * (albedo.r + albedo.b));
+	float coast_grade = 1.0 - smoothstep(5.0, 28.0, height);
+	vec3 mineral = albedo * mix(vec3(1.09, 1.03, 0.95), vec3(1.13, 1.05, 0.95), coast_grade);
+	mineral += vec3(0.007, 0.004, 0.002) * smoothstep(0.4, 15.0, height);
+	vec3 tropical = albedo * vec3(0.96, 1.07, 1.055);
 	// Apply PBR
-	ALBEDO = albedo;
+	ALBEDO = mix(mineral, tropical, green);
 	ROUGHNESS = clamp(rough, 0.0, 1.0);
 	SPECULAR = clamp(spec, 0.0, 1.0);
 	NORMAL_MAP = nrm;

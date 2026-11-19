@@ -20,8 +20,8 @@ void vertex() {
 
 void fragment() {
 	vec2 uv = UV - vec2(0.5);
-	float wobble = sin(uv.x * 17.0 + seed * 40.0) * cos(uv.y * 15.0 - seed * 12.0) * 0.06;
-	float falloff = 1.0 - smoothstep(0.03, 0.50, length(uv) + wobble);
-	ALBEDO = vec3(0.83, 0.90, 0.89);
-	ALPHA = falloff * sin(life * PI) * 0.24 * fade;
+	float wobble = sin(uv.x * 9.0 + seed * 18.0) * cos(uv.y * 7.0 - seed * 9.0) * 0.028;
+	float falloff = 1.0 - smoothstep(0.0, 0.50, length(uv * vec2(1.0, 0.9)) + wobble);
+	ALBEDO = mix(vec3(0.67, 0.76, 0.77), vec3(0.91, 0.93, 0.91), seed);
+	ALPHA = falloff * sin(life * PI) * 0.20 * fade;
 }

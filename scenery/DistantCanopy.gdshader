@@ -16,8 +16,9 @@ void fragment() {
 	if (fade <= 1.0 - threshold) {
 		discard;
 	}
-	vec3 leaves = COLOR.rgb * mix(0.58, 1.25, smoothstep(0.37, 1.0, leaf_height));
-	ALBEDO = mix(vec3(0.081, 0.063, 0.037), leaves, smoothstep(0.34, 0.43, leaf_height));
+	vec3 canopy_green = COLOR.rgb * vec3(0.91, 1.12, 1.13) + vec3(0.003, 0.009, 0.004);
+	vec3 leaves = canopy_green * mix(0.66, 1.23, smoothstep(0.37, 1.0, leaf_height));
+	ALBEDO = mix(vec3(0.096, 0.071, 0.042), leaves, smoothstep(0.34, 0.43, leaf_height));
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.08;
 }

@@ -4,11 +4,10 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx, depth_draw_opaq
 
 uniform sampler2D coastal_shelf : filter_linear_mipmap, repeat_disable;
 uniform sampler2D ocean_detail : filter_linear_mipmap, repeat_enable;
-uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
-uniform vec4 deep : source_color = vec4(0.012, 0.08, 0.2, 1.0);
-uniform vec4 shelf_blue : source_color = vec4(0.01, 0.32, 0.42, 1.0);
-uniform vec4 lagoon : source_color = vec4(0.05, 0.62, 0.55, 1.0);
-uniform vec4 breaker : source_color = vec4(0.95, 0.98, 0.96, 1.0);
+uniform vec4 deep : source_color = vec4(0.025, 0.20, 0.42, 1.0);
+uniform vec4 shelf_blue : source_color = vec4(0.028, 0.47, 0.61, 1.0);
+uniform vec4 lagoon : source_color = vec4(0.14, 0.69, 0.61, 1.0);
+uniform vec4 breaker : source_color = vec4(0.89, 0.95, 0.94, 1.0);
 uniform vec3 sun_dir = vec3(-0.55, 0.74, 0.37);
 
 varying vec3 surface_world;
@@ -30,61 +29,54 @@ void vertex() {
 
 void fragment() {
     vec2 p = surface_world.xz;
-    float warp = texture(ocean_detail, p / 18.0).g - 0.5;
-    float depth = max(0.0, -shelf_h(p, 2.2) - warp * 0.8);
+    float depth = max(0.0, -shelf_h(p, 2.2));
     float range_m = length(CAMERA_POSITION_WORLD - surface_world);
     float a = dot(p, vec2(0.063, 0.079)) - TIME * 0.96;
     float b = dot(p, vec2(-0.091, 0.041)) - TIME * 1.14;
-    vec2 swell = 0.28 * vec2(0.063, 0.079) * cos(a) + 0.14 * vec2(-0.091, 0.041) * cos(b);
-    vec2 fine = texture(ocean_detail, p / 9.0 + TIME * vec2(0.04, -0.02)).rg - 0.5;
-    vec2 finer = texture(ocean_detail, vec2(p.y, -p.x) / 3.2 + TIME * vec2(-0.06, 0.04)).rg - 0.5;
-    float chop = 1.0 - smoothstep(80.0, 900.0, range_m);
-    swell *= (1.0 - smoothstep(650.0, 3500.0, range_m)) / (1.0 + fwidth(a) + fwidth(b));
-    vec2 tilt = swell + fine * mix(0.35, 0.85, chop) + finer * 0.45 * chop;
-    tilt *= 1.0 - smoothstep(1900.0, 6500.0, range_m);
+    float ruffle = dot(p, vec2(0.29, -0.16)) - TIME * 1.45;
+    // Preserve readable swell at the shore and suppress repeating normals
+    // across the large offshore footprint seen from the summit.
+    float wave_fade = 1.0 - smoothstep(110.0, 1250.0, range_m);
+    wave_fade *= mix(1.0, 0.36, smoothstep(100.0, 440.0, range_m));
+    vec2 tilt = (
+        vec2(0.027, 0.039) * cos(a) / (1.0 + fwidth(a))
+        + vec2(-0.032, 0.017) * cos(b) / (1.0 + fwidth(b))
+        + vec2(0.012, -0.011) * cos(ruffle) / (1.0 + fwidth(ruffle))
+    ) * wave_fade;
     vec3 world_n = normalize(vec3(-tilt.x, 1.0, -tilt.y));
     NORMAL = normalize(mat3(VIEW_MATRIX) * world_n);
 
     vec3 view = normalize(CAMERA_POSITION_WORLD - surface_world);
-    float ndotv = clamp(dot(world_n, view), 0.0, 1.0);
-    float fres = pow(1.0 - ndotv, 4.0);
-    vec3 water = mix(deep.rgb, shelf_blue.rgb, exp(-depth * 0.08));
-    water = mix(water, lagoon.rgb, exp(-depth * 0.18));
-    if (depth < 12.0) {
-        vec3 bed = texture(screen_tex, SCREEN_UV + tilt * 0.01 * exp(-depth * 0.5)).rgb;
-        water = mix(water, bed * vec3(0.4, 0.75, 0.7), exp(-depth * 0.7) * 0.35 * (1.0 - smoothstep(8.0, 12.0, depth)));
-    }
-    vec3 sky = mix(vec3(0.4, 0.58, 0.76), vec3(0.75, 0.86, 0.94), clamp(world_n.y, 0.0, 1.0));
-    water = mix(water, sky, fres * 0.22);
-    float wave_detail = (1.0 - smoothstep(500.0, 3600.0, range_m)) / (1.0 + fwidth(a));
-    water += lagoon.rgb * clamp(sin(a) * 0.5 + 0.5, 0.0, 1.0) * ndotv * 0.08 * wave_detail;
-    float spec = pow(clamp(dot(world_n, normalize(normalize(sun_dir) + view)), 0.0, 1.0), 90.0);
-    water += vec3(1.0, 0.96, 0.88) * spec * 0.45;
+    float facing = max(dot(world_n, view), 0.0);
+    float fresnel = 0.022 + 0.82 * pow(1.0 - facing, 5.0);
+    vec3 reflected = reflect(-view, world_n);
+    vec3 sky = mix(vec3(0.24, 0.39, 0.49), vec3(0.20, 0.42, 0.65),
+        smoothstep(-0.03, 0.72, reflected.y));
+    vec3 water = mix(deep.rgb, shelf_blue.rgb, exp(-depth * 0.077));
+    water = mix(water, lagoon.rgb, exp(-depth * 0.22));
+    water = mix(water, sky, fresnel * 0.56);
+    float sun = max(dot(reflected, normalize(sun_dir)), 0.0);
+    water += vec3(1.0, 0.91, 0.75) * pow(sun, 72.0) * 0.24 * wave_fade;
 
     float foam = 0.0;
-    if (depth < 16.0) {
+    if (depth < 14.0) {
+        // Keep the coastal swash in phase with the wet sand beneath it.
         float phase = TIME * 0.92 + 0.37 * sin(dot(p, vec2(0.027, 0.016))) + 0.26 * sin(b);
-        float lace = texture(ocean_detail, p / 27.0 + tilt * 0.22 + TIME * vec2(-0.004, 0.007)).b;
-        float lip = texture(ocean_detail, p / 11.0 + TIME * vec2(0.02, -0.015)).g;
-        float wash_edge = 1.0 + 0.64 * sin(phase) + 0.22 * sin(a) + warp * 0.6;
-        float swash = (1.0 - smoothstep(0.08, 1.65, abs(depth - wash_edge))) * mix(0.55, 1.0, lace);
-        float front = 4.45 - 1.28 * sin(phase - 0.9) + 0.4 * cos(a * 0.72);
-        float crest = (1.0 - smoothstep(0.12, 1.24, abs(depth - front))) * smoothstep(0.15, 0.75, 0.61 * lace + 0.39 * lip);
-        float break_d = 0.45 + 0.85 * (0.5 + 0.5 * sin(phase));
-        float line = exp(-abs(depth - break_d) * 1.7) * mix(0.65, 1.0, lace);
-        float off_sand = smoothstep(0.0, 0.55, depth + warp * 0.4);
-        foam = clamp((swash * 0.97 + crest * 0.75 + line * 0.8) * mix(0.35, 1.0, off_sand), 0.0, 1.0);
-        water = mix(water, breaker.rgb, foam);
-
+        float lace = texture(ocean_detail, p / 33.0 + TIME * vec2(-0.004, 0.007)).b;
+        float shore = 0.77 + sin(phase) * 0.56 + cos(a) * 0.16;
+        float crest = 4.10 - sin(phase - 0.9) * 1.07 + 0.32 * cos(a * 0.72);
+        float band = clamp(fwidth(depth), 0.10, 0.85);
+        float swash = 1.0 - smoothstep(0.12, 0.82 + band, abs(depth - shore));
+        float breaker_wave = 1.0 - smoothstep(0.12, 0.98 + band, abs(depth - crest));
+        foam = clamp((swash * 0.78 + breaker_wave * smoothstep(0.28, 0.70, lace) * 0.69)
+            * smoothstep(0.0, 0.47, depth), 0.0, 0.92);
     }
 
-    float edge = smoothstep(0.0, 0.9, depth + warp * 0.55);
-    float alpha = mix(0.62, 0.99, 1.0 - exp(-depth * 0.4));
-    alpha *= mix(0.72, 1.0, edge);
-    alpha = mix(alpha, 1.0, max(foam, fres * 0.5 * smoothstep(0.25, 1.2, depth)));
-    ALBEDO = water;
-    ROUGHNESS = mix(0.14, 0.8, foam);
-    SPECULAR = mix(0.5, 0.12, foam);
+    float alpha = mix(0.45, 0.99, 1.0 - exp(-depth * 0.30));
+    alpha = mix(alpha, 1.0, max(foam, fresnel * smoothstep(0.10, 1.6, depth) * 0.65));
+    ALBEDO = mix(water, breaker.rgb, foam);
+    ROUGHNESS = mix(0.21, 0.72, foam);
+    SPECULAR = mix(0.29, 0.10, foam);
     // Blend into the sky before the ocean grid reaches its outer perimeter.
-    ALPHA = clamp(alpha, 0.0, 1.0) * (1.0 - smoothstep(19000.0, 45000.0, range_m));
+    ALPHA = alpha * (1.0 - smoothstep(19000.0, 45000.0, range_m));
 }

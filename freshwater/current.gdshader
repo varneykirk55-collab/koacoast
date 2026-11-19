@@ -18,47 +18,58 @@ void vertex() {
 
 void fragment() {
 	float across = UV.x;
-	float travel = UV.y;
+	float along = UV.y;
 	float fall = UV2.x;
 	float width = max(0.25, UV2.y);
-	float strength = max(fall, channel.g * 0.42);
-	float t = travel - TIME * mix(0.75, 8.5, strength);
-	float fade_detail = 1.0 - smoothstep(detail_range * 0.65, detail_range, camera_range);
-	// Resolve to broad colors in the distance instead of subpixel ripple textures.
-	vec3 streak = vec3(0.55, 0.48, 0.5);
-	if (distance_blend < 0.995) {
-		vec3 detail = texture(flow_detail, vec2(across * width * 0.36, t * 0.085)).rgb;
-		streak = mix(detail, streak, distance_blend);
-	}
-	float curls = streak.g;
-	if (fade_detail > 0.0) {
-		curls = mix(curls, texture(flow_detail, vec2(across * width * 0.83 + streak.b * 0.16, t * 0.24)).b, 0.55 * fade_detail);
-	}
 	float edge = min(across, 1.0 - across);
-	float core = smoothstep(0.015 + streak.r * 0.045, 0.21, edge);
-	float whitewater = strength * smoothstep(0.23, 0.74, curls + fall * 0.23);
-	float runnels = sin(across * (17.0 + width * 2.8) + sin(travel * 0.38 + t * 0.32) * 0.56) * 0.5 + 0.5;
-	float sheets = mix(streak.r, runnels, 0.44);
-	float falling_sheet = fall * mix(0.20, 0.76, smoothstep(0.18, 0.81, sheets));
-	float torn_edge = mix(0.018, 0.12, smoothstep(0.28, 0.72, streak.g));
-	if (fall > 0.50 && edge < torn_edge * (fall - 0.50) * 2.0) {
-		discard;
-	}
-	float impact = channel.b * smoothstep(0.17, 0.70, 0.65 * curls + 0.4 * core);
-	float foam = clamp(max(whitewater * (1.0 - 0.63 * fall), falling_sheet) + impact * 0.52, 0.0, 0.92);
+	float core = smoothstep(0.015, 0.27, edge);
+	float depth = max(channel.r, pool * core * 0.78);
 
-	vec3 stone_water = vec3(0.082, 0.12, 0.106);
-	vec3 deep = vec3(0.035, 0.14, 0.13);
-	vec3 water = mix(stone_water, deep, smoothstep(0.03, 0.79, channel.r));
-	water = mix(water, vec3(0.075, 0.205, 0.218), channel.a * 0.6);
-	water += (curls - 0.5) * 0.065;
-	vec3 near_color = mix(water, vec3(0.66, 0.72, 0.70), foam * mix(core, 1.0, fall));
-	vec3 far_color = mix(vec3(0.13, 0.29, 0.32), vec3(0.20, 0.38, 0.40), pool);
-	float sheet = smoothstep(0.05, 0.70, fall) * mix(0.52, 0.92, core);
-	far_color = mix(far_color, vec3(0.67, 0.75, 0.74), max(sheet, channel.b * core * 0.58));
-	ALBEDO = mix(near_color, far_color, distance_blend);
-	// A small diffuse sky contribution keeps water readable in ravine shadow.
-	EMISSION = far_color * distance_blend * 0.19;
-	ROUGHNESS = mix(0.19, 0.73, foam);
-	SPECULAR = mix(mix(0.51, 0.16, foam), 0.08, distance_blend);
+	// A distant surface keeps the same color family and silhouette at every preset.
+	vec3 far_color = mix(vec3(0.084, 0.235, 0.228), vec3(0.105, 0.320, 0.314), depth);
+	far_color = mix(far_color, vec3(0.088, 0.315, 0.36), channel.a * 0.45);
+	float far_foam = max(smoothstep(0.07, 0.78, fall) * mix(0.43, 0.87, core), channel.b * core * 0.55);
+	far_color = mix(far_color, vec3(0.68, 0.75, 0.74), far_foam);
+	vec3 water = far_color;
+	float foam = far_foam;
+
+	if (distance_blend < 0.999) {
+		float motion = mix(0.55, 7.2, max(fall, channel.g * 0.42));
+		float t = along - TIME * motion;
+		float fade = (1.0 - distance_blend) * (1.0 - smoothstep(detail_range * 0.62, detail_range, camera_range));
+		float broad = sin(t * mix(0.68, 1.35, fall) + across * 3.6);
+		float feather = 0.5;
+		if (fade > 0.0) {
+			feather = texture(flow_detail, vec2(across * width * 0.21, t * 0.075)).g;
+		}
+		float moving_water = mix(0.5, 0.5 + broad * 0.18, fade);
+		float trough = sin(across * (9.0 + width * 2.6) + 0.38 * sin(t * 0.44));
+		float strands = mix(0.5, 0.5 + trough * 0.27 + (feather - 0.5) * 0.28, fade);
+		// Foam rides the center of rapids and spreads at the foot of the drop.
+		float rapid = channel.g * (1.0 - pool * 0.55) * smoothstep(0.31, 0.76, moving_water) * core;
+		float plunge = channel.b * smoothstep(0.21, 0.73, moving_water + core * 0.26);
+		float whitewater = fall * mix(0.34, 0.88, smoothstep(0.13, 0.83, strands)) * mix(0.66, 1.0, core);
+		foam = clamp(max(whitewater, rapid * (1.0 - fall * 0.7)) + plunge * 0.58, 0.0, 0.96);
+
+		// Approximate light transmitted from the bed with depth and edge color.
+		// The shared opaque pass keeps crossings and the ocean mouth depth-sorted.
+		vec3 shallows = vec3(0.125, 0.263, 0.195);
+		vec3 deep = mix(vec3(0.045, 0.156, 0.158), vec3(0.052, 0.239, 0.226), pool);
+		vec3 near_color = mix(shallows, deep, smoothstep(0.03, 0.90, depth));
+		near_color = mix(near_color, vec3(0.073, 0.275, 0.31), channel.a * 0.54);
+		float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
+		float fresnel = pow(1.0 - facing, 4.0);
+		near_color = mix(near_color, vec3(0.30, 0.44, 0.49), fresnel * (0.23 + 0.12 * pool));
+		near_color += (moving_water - 0.50) * 0.08;
+		vec3 veil = mix(vec3(0.26, 0.39, 0.40), vec3(0.70, 0.76, 0.75), strands);
+		near_color = mix(near_color, veil, fall * 0.60);
+		near_color = mix(near_color, vec3(0.78, 0.82, 0.80), foam);
+		water = mix(near_color, far_color, distance_blend);
+		foam = mix(foam, far_foam, distance_blend);
+	}
+
+	ALBEDO = water;
+	EMISSION = far_color * distance_blend * 0.095;
+	ROUGHNESS = mix(mix(0.24, 0.39, pool), 0.69, foam);
+	SPECULAR = mix(0.34, 0.08, max(foam, distance_blend));
 }
