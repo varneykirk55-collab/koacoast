@@ -11,7 +11,7 @@
 [ext_resource type="Texture2D" path="res://materials/TradeClouds.png" id="clouds"]
 [ext_resource type="ArrayMesh" path="res://materials/OceanSurface.res" id="sea_grid"]
 [ext_resource type="Texture2D" path="res://materials/OceanDetail.png" id="wave_detail"]
-[ext_resource type="PackedScene" path="res://player/Player.tscn" id="player"]
+[ext_resource type="PackedScene" path="res://player/KekoaPlayer.tscn" id="player"]
 
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("atmosphere")
