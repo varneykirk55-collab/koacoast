@@ -62,21 +62,19 @@ def main() -> None:
     fine = fbm(u * 140.0, v * 140.0, 33, octaves=2)
     pebbles = fbm(u * 22.0, v * 22.0, 51, octaves=4)
 
-    # Near-black basalt. Shifts are value and a cool blue-grey, never brown.
-    deep = np.array([12.0, 14.0, 18.0], dtype=np.float32)
-    mid = np.array([22.0, 24.0, 29.0], dtype=np.float32)
-    lift = np.array([36.0, 39.0, 46.0], dtype=np.float32)
-    rgb = deep + (mid - deep) * np.clip(macro * 1.25, 0.0, 1.0)[..., None]
-    rgb = rgb + (lift - mid) * np.clip((meso[..., None] - 0.45) * 1.15, 0.0, 1.0)
-    rgb *= 0.9 + 0.22 * grain[..., None]
-    rgb += (fine[..., None] - 0.5) * np.array([5.0, 5.5, 7.0], dtype=np.float32)
+    # Near-black basalt, cool, with enough grain that a third-person camera can see it.
+    deep = np.array([18.0, 20.0, 26.0], dtype=np.float32)
+    mid = np.array([34.0, 37.0, 46.0], dtype=np.float32)
+    lift = np.array([52.0, 56.0, 66.0], dtype=np.float32)
+    rgb = deep + (mid - deep) * np.clip(macro * 1.2, 0.0, 1.0)[..., None]
+    rgb = rgb + (lift - mid) * np.clip((meso[..., None] - 0.42) * 1.2, 0.0, 1.0)
+    rgb *= 0.78 + 0.48 * grain[..., None]
+    rgb += (fine[..., None] - 0.5) * np.array([14.0, 15.0, 18.0], dtype=np.float32)
 
-    speck = np.clip((pebbles - 0.74) / 0.16, 0.0, 1.0)
-    pebble_col = np.array([72.0, 76.0, 86.0], dtype=np.float32)
-    rgb = rgb * (1.0 - speck[..., None] * 0.55) + pebble_col * speck[..., None] * 0.55
-    fleck = np.clip((fbm(u * 90.0, v * 90.0, 70, octaves=2) - 0.88) / 0.08, 0.0, 1.0)
-    rgb = np.maximum(rgb, fleck[..., None] * np.array([96.0, 102.0, 114.0], dtype=np.float32))
-    rgb = np.clip(rgb, 6.0, 120.0)
+    speck = np.clip((pebbles - 0.78) / 0.14, 0.0, 1.0)
+    pebble_col = np.array([70.0, 74.0, 84.0], dtype=np.float32)
+    rgb = rgb * (1.0 - speck[..., None] * 0.4) + pebble_col * speck[..., None] * 0.4
+    rgb = np.clip(rgb, 8.0, 96.0)
 
     height = 0.42 + (grain - 0.5) * 0.10 + (fine - 0.5) * 0.05 + speck * 0.22
     height = np.clip(height, 0.12, 0.92)
@@ -85,7 +83,7 @@ def main() -> None:
     Image.fromarray(albedo, mode="RGBA").save(OUT / "BlackSand_AH.png")
 
     # Standard tangent-space normal from the height field, plus roughness.
-    strength = 2.4 + speck * 3.5
+    strength = 4.2 + speck * 2.2
     dx = (np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)) * strength
     dy = (np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)) * strength
     nx = -dx

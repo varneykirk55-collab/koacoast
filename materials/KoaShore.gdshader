@@ -776,7 +776,7 @@ void fragment() {
 	// A slope gate by itself painted the whole gentle lip.
 	float rock_blob = coast_fbm(world_xz * 0.016 + vec2(2.2, 6.4));
 	float rock_mid = coast_fbm(world_xz * 0.055 + vec2(8.0, 1.5));
-	float rock_w = smoothstep(0.47, 0.66, rock_blob + (rock_mid - 0.5) * 0.2);
+	float rock_w = smoothstep(0.42, 0.62, rock_blob + (rock_mid - 0.5) * 0.22);
 	float rock_place = smoothstep(0.55, 1.4, height) * (1.0 - smoothstep(5.5, 12.0, height));
 	rock_place *= 1.0 - smoothstep(6.0, 42.0, dist);
 	rock_place = max(rock_place, smoothstep(0.12, 0.28, slope) * (1.0 - smoothstep(3.0, 28.0, dist)) * 0.85);
@@ -808,19 +808,22 @@ void fragment() {
 	float grit = coast_noise(world_xz * 6.5);
 	float specks = smoothstep(0.78, 0.93, coast_fbm(world_xz * 1.7 + vec2(1.0, 5.0)));
 	vec3 sand_col = mix(sand_hi, sand_lo, 0.35 + 0.2 * macro);
-	// Value and a cool blue-grey shift. The noon sun is warm, so the albedo stays blue-biased.
-	sand_col *= mix(vec3(0.55, 0.62, 0.78), vec3(0.92, 0.98, 1.08), meso);
-	sand_col *= mix(0.72, 1.12, macro);
-	sand_col *= mix(0.9, 1.06, grit);
-	sand_col = mix(sand_col, sand_col * vec3(1.35, 1.42, 1.58) + vec3(0.012, 0.016, 0.024), specks * 0.45);
+	// Cool near-black, but the floor stays high enough that grain and ripples survive the sun.
+	sand_col *= mix(vec3(0.78, 0.84, 0.98), vec3(1.08, 1.12, 1.22), meso);
+	sand_col *= mix(0.84, 1.2, macro);
+	sand_col *= mix(0.86, 1.16, grit);
+	sand_col = mix(sand_col, sand_col * vec3(1.15, 1.2, 1.28) + vec3(0.008, 0.01, 0.016), specks * 0.28);
 
 	vec3 rock_col = coast_albedo(0, world_xz, ddx, ddy).rgb;
-	rock_col *= vec3(0.34, 0.35, 0.38);
-	rock_col *= mix(0.65, 1.05, coast_fbm(world_xz * 0.03 + vec2(8.0, 1.0)));
+	// Dark grey basalt, a step lighter and more neutral than the blue-black sand so the shelves read.
+	rock_col = rock_col * vec3(0.72, 0.74, 0.78) + vec3(0.012, 0.013, 0.015);
+	rock_col *= mix(0.75, 1.15, coast_fbm(world_xz * 0.03 + vec2(8.0, 1.0)));
 	vec3 veg_col = coast_albedo(2, world_xz * 1.15, ddx, ddy).rgb;
 
 	vec4 sand_nrm = coast_normal(3, world_xz, ddx, ddy);
+	sand_nrm.xy = clamp((sand_nrm.xy - 0.5) * 0.55 + 0.5, 0.0, 1.0);
 	vec4 rock_nrm = coast_normal(0, world_xz, ddx, ddy);
+	rock_nrm.xy = clamp((rock_nrm.xy - 0.5) * 1.85 + 0.5, 0.0, 1.0);
 	vec3 albedo = painted_albedo * paint_w + sand_col * sand_w + rock_col * rock_w + veg_col * veg_w;
 	vec3 nrm = painted_normal * paint_w + sand_nrm.rgb * sand_w + rock_nrm.rgb * rock_w + painted_normal * veg_w;
 	float rock_rough = max(rock_nrm.a, 0.92);
@@ -844,27 +847,28 @@ void fragment() {
 	wet *= smoothstep(-0.15, 0.05, height) * max(sand_w, rock_w * 0.35);
 	wet = clamp(wet, 0.0, 1.0);
 
-	albedo = mix(albedo, albedo * vec3(0.16, 0.18, 0.24), wet);
-	// Most of the wet sand stays dark. Only scattered grains mirror the sun, so the bank
-	// cannot turn into a pale sheet.
-	float glint = smoothstep(0.86, 0.97, coast_noise(world_xz * 14.0));
-	rough = mix(rough, mix(0.78, 0.16, glint), wet);
-	spec = mix(spec, mix(0.22, 0.85, glint), wet);
+	albedo = mix(albedo, albedo * vec3(0.22, 0.25, 0.32), wet);
+	// Soft sheen on the whole swash. Glints are a sun/view spike on tiny grains, not white blobs.
+	rough = mix(rough, 0.7, wet * (1.0 - rock_w));
+	rough = mix(rough, 0.48, wet * rock_w);
+	spec = mix(spec, 0.28, wet);
+	vec3 n_view = normalize(mat3(TANGENT, BINORMAL, NORMAL) * (nrm * 2.0 - 1.0));
+	vec3 sun_dir = normalize(vec3(-0.55, 0.74, 0.37));
+	vec3 sun_view = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);
+	vec3 half_dir = normalize(sun_view + normalize(-VERTEX));
+	float micro = coast_noise(world_xz * 55.0);
+	float glint = pow(clamp(dot(n_view, half_dir), 0.0, 1.0), 96.0);
+	glint *= smoothstep(0.62, 0.9, micro) * wet;
+	albedo += vec3(0.16, 0.18, 0.2) * glint;
 
-	// Broken wash streaks on the sand. They vary along the shore so they cannot form a pale stripe.
-	float wash_up = 1.0 - smoothstep(0.02, max(reach, 0.25) + 0.2, height);
-	float along = world_xz.x * 0.62 - world_xz.y * 0.28;
-	float drift = height * 5.0 - TIME * (0.35 + 0.5 * max(tide, 0.0));
-	float lace_s = coast_noise(vec2(along, drift));
-	float lace_b = coast_noise(vec2(along * 0.41 + 9.0, drift * 0.7 + 3.0));
-	float streak = smoothstep(0.78, 0.93, lace_s) * smoothstep(0.45, 0.72, lace_b);
-	float foam_s = streak * wash_up * smoothstep(0.0, 0.08, height);
-	foam_s *= mix(1.0, 0.2, smoothstep(0.0, max(reach, 0.3), height));
-	foam_s *= 0.55 + 0.45 * max(tide, 0.0);
-	foam_s = clamp(foam_s, 0.0, 1.0);
-	albedo = mix(albedo, vec3(0.93, 0.96, 0.94), foam_s);
-	rough = mix(rough, 0.7, foam_s);
-	spec = mix(spec, 0.15, foam_s);
+	// A thin lace only, right against the water. It must not paint the whole bank.
+	float lace = coast_fbm(world_xz * 0.55 + vec2(TIME * 0.08, wet_n * 2.0));
+	float sheets = exp(-height * height * 40.0) * smoothstep(0.55, 0.85, lace);
+	sheets *= (0.35 + 0.65 * max(tide, 0.0));
+	sheets = clamp(sheets, 0.0, 0.22);
+	albedo = mix(albedo, vec3(0.8, 0.84, 0.82), sheets);
+	rough = mix(rough, 0.62, sheets);
+	spec = mix(spec, 0.18, sheets);
 
 	// Apply PBR
 	ALBEDO = albedo;

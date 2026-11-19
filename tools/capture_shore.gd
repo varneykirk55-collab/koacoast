@@ -30,6 +30,22 @@ func _initialize() -> void:
 	]
 
 
+func _toward_water(origin: Vector3) -> Vector3:
+	var dir := Vector3(-0.38, 0.0, 0.92).normalized()
+	var space := _player.get_world_3d().direct_space_state
+	var p := origin
+	for _i in 48:
+		var query := PhysicsRayQueryParameters3D.create(p + Vector3(0.0, 40.0, 0.0), p + Vector3(0.0, -30.0, 0.0), 1)
+		var hit := space.intersect_ray(query)
+		if hit.is_empty():
+			return p
+		var ground: Vector3 = hit.position
+		if ground.y < 0.45:
+			return ground + Vector3(0.0, 1.6, 0.0)
+		p += dir * 6.0
+	return origin
+
+
 func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames < 8:
@@ -40,7 +56,10 @@ func _process(_delta: float) -> bool:
 	var spec: Dictionary = _shots[_shot]
 	var hold := 8 + _shot * 12
 	if _frames == hold:
-		_player.global_position = spec.pos
+		var place: Vector3 = spec.pos
+		if spec.name == "02_wet_band" or spec.name == "04_foam":
+			place = _toward_water(place)
+		_player.global_position = place
 		_player.velocity = Vector3.ZERO
 		_player.get_node("CameraPivot").rotation = Vector3(0.0, spec.yaw, 0.0)
 		_player.get_node("CameraPivot/SpringArm3D").rotation = Vector3(spec.pitch, 0.0, 0.0)
