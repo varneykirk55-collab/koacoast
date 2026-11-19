@@ -3,7 +3,7 @@ extends Node3D
 ## A walked-away tile can be discarded and rebuilt with the same plants.
 
 const TILE := 24
-const RADIUS := 3
+const RADII := [2, 3, 4]
 const SPECIES := [
 	preload("res://foliage/meshes/Sedge.obj"),
 	preload("res://foliage/meshes/Fern.obj"),
@@ -23,6 +23,13 @@ const TRAILS := [
 var tiles := {}
 var pending: Array[Vector2i] = []
 var center := Vector2i.MAX
+var _radius := 3
+var _near_leaves: ShaderMaterial = LEAVES.duplicate()
+
+func set_quality(level: int) -> void:
+	_radius = RADII[level]
+	_near_leaves.set_shader_parameter("detail_range", float(_radius * TILE - 4))
+	center = Vector2i.MAX
 
 func _process(_delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
@@ -34,11 +41,11 @@ func _process(_delta: float) -> void:
 		center = here
 		pending.clear()
 		for key: Vector2i in tiles.keys():
-			if _distance(key, here) > RADIUS + 1:
+			if _distance(key, here) > _radius + 1:
 				tiles[key].queue_free()
 				tiles.erase(key)
-		for z in range(-RADIUS, RADIUS + 1):
-			for x in range(-RADIUS, RADIUS + 1):
+		for z in range(-_radius, _radius + 1):
+			for x in range(-_radius, _radius + 1):
 				var key := here + Vector2i(x,z)
 				if not tiles.has(key):
 					pending.append(key)
@@ -115,7 +122,7 @@ func _plant_tile(key: Vector2i) -> void:
 			batch.set_instance_transform(i, transforms[i])
 		var display := MultiMeshInstance3D.new()
 		display.multimesh = batch
-		display.material_override = LEAVES
+		display.material_override = _near_leaves
 		display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		tile.add_child(display)
 

@@ -450,7 +450,8 @@ float coast_fbm(vec2 p) {
 }
 
 float coast_height_at(vec2 world_xz) {
-	return texelFetch(_height_maps, get_index_coord(world_xz * _vertex_density), 0).r;
+	ivec3 tile = get_index_coord(world_xz * _vertex_density);
+	return tile.z < 0 ? -48.0 : texelFetch(_height_maps, tile, 0).r;
 }
 
 // Metres to the nearest water along 8 bearings. 0 when this point is already wet.
@@ -752,126 +753,154 @@ void fragment() {
 	float height = v_vertex.y;
 	vec2 world_xz = v_vertex.xz;
 	float slope = clamp(1.0 - w_normal.y, 0.0, 1.0);
-	float dist = coast_shore_distance(world_xz, height);
-	float cavity = clamp((
-		coast_height_at(world_xz + vec2(3.5, 0.0)) +
-		coast_height_at(world_xz + vec2(-3.5, 0.0)) +
-		coast_height_at(world_xz + vec2(0.0, 3.5)) +
-		coast_height_at(world_xz + vec2(0.0, -3.5))) * 0.25 - height, 0.0, 1.2);
-	cavity = clamp(cavity * 1.15, 0.0, 1.0);
+	vec3 albedo = painted_albedo;
+	vec3 nrm = painted_normal;
+	float rough = painted_rough;
+	float spec = painted_spec;
+	// The expensive shoreline survey contributes only within reach of sea level.
+	if (height < 64.0 && height > -12.0) {
+		float dist = coast_shore_distance(world_xz, height);
+		float cavity = clamp((
+			coast_height_at(world_xz + vec2(3.5, 0.0)) +
+			coast_height_at(world_xz + vec2(-3.5, 0.0)) +
+			coast_height_at(world_xz + vec2(0.0, 3.5)) +
+			coast_height_at(world_xz + vec2(0.0, -3.5))) * 0.25 - height, 0.0, 1.2);
+		cavity = clamp(cavity * 1.15, 0.0, 1.0);
 
-	float n_edge = coast_fbm(world_xz * 0.031);
-	float n_break = coast_fbm(world_xz * 0.09 + vec2(6.0, 2.0));
-	// Sand reaches farther on the flat and pulls back on slopes. Noise keeps the edge off a contour line.
-	float sand_edge = mix(16.0, 42.0, n_edge) - slope * 22.0 + cavity * 9.0 + (n_break - 0.5) * 8.0;
-	float sand_w = 1.0 - smoothstep(sand_edge - 5.0, sand_edge + 4.0, dist);
-	sand_w *= 1.0 - smoothstep(0.18, 0.58, slope);
-	sand_w *= 1.0 - smoothstep(3.6, 8.5, height);
-	// Shallow seabed in front of the beach stays sand, so the water doesn't reveal a different material.
-	sand_w = max(sand_w, (1.0 - smoothstep(0.2, 5.5, -height)) * (1.0 - smoothstep(0.22, 0.62, slope)));
-	// Sand settles into pockets in the rock.
-	sand_w = max(sand_w, cavity * (1.0 - smoothstep(1.5, 10.0, height)) * (1.0 - smoothstep(6.0, 28.0, dist)));
+		float n_edge = coast_fbm(world_xz * 0.031);
+		float n_break = coast_fbm(world_xz * 0.09 + vec2(6.0, 2.0));
+		// Sand reaches farther on the flat and pulls back on slopes. Noise keeps the edge off a contour line.
+		float sand_edge = mix(16.0, 42.0, n_edge) - slope * 22.0 + cavity * 9.0 + (n_break - 0.5) * 8.0;
+		float sand_w = 1.0 - smoothstep(sand_edge - 5.0, sand_edge + 4.0, dist);
+		sand_w *= 1.0 - smoothstep(0.18, 0.58, slope);
+		sand_w *= 1.0 - smoothstep(3.6, 8.5, height);
+		// Shallow seabed in front of the beach stays sand, so the water doesn't reveal a different material.
+		sand_w = max(sand_w, (1.0 - smoothstep(0.2, 5.5, -height)) * (1.0 - smoothstep(0.22, 0.62, slope)));
+		// Sand settles into pockets in the rock.
+		sand_w = max(sand_w, cavity * (1.0 - smoothstep(1.5, 10.0, height)) * (1.0 - smoothstep(6.0, 28.0, dist)));
 
-	// Large lava outcrops. Low-frequency noise makes the shapes; slope only encourages them.
-	// A slope gate by itself painted the whole gentle lip.
-	float rock_blob = coast_fbm(world_xz * 0.016 + vec2(2.2, 6.4));
-	float rock_mid = coast_fbm(world_xz * 0.055 + vec2(8.0, 1.5));
-	float rock_w = smoothstep(0.42, 0.62, rock_blob + (rock_mid - 0.5) * 0.22);
-	float rock_place = smoothstep(0.55, 1.4, height) * (1.0 - smoothstep(5.5, 12.0, height));
-	rock_place *= 1.0 - smoothstep(6.0, 42.0, dist);
-	rock_place = max(rock_place, smoothstep(0.12, 0.28, slope) * (1.0 - smoothstep(3.0, 28.0, dist)) * 0.85);
-	rock_w *= rock_place;
-	rock_w *= 1.0 - smoothstep(0.04, 0.4, cavity);
-	rock_w = clamp(rock_w, 0.0, 1.0);
-	sand_w = clamp(max(sand_w, cavity * (1.0 - smoothstep(8.0, 30.0, dist))), 0.0, 1.0);
-	sand_w = clamp(sand_w * (1.0 - rock_w), 0.0, 1.0);
+		// Large lava outcrops. Low-frequency noise makes the shapes; slope only encourages them.
+		// A slope gate by itself painted the whole gentle lip.
+		float rock_blob = coast_fbm(world_xz * 0.016 + vec2(2.2, 6.4));
+		float rock_mid = coast_fbm(world_xz * 0.055 + vec2(8.0, 1.5));
+		float rock_w = smoothstep(0.42, 0.62, rock_blob + (rock_mid - 0.5) * 0.22);
+		float rock_place = smoothstep(0.55, 1.4, height) * (1.0 - smoothstep(5.5, 12.0, height));
+		rock_place *= 1.0 - smoothstep(6.0, 42.0, dist);
+		rock_place = max(rock_place, smoothstep(0.12, 0.28, slope) * (1.0 - smoothstep(3.0, 28.0, dist)) * 0.85);
+		rock_w *= rock_place;
+		rock_w *= 1.0 - smoothstep(0.04, 0.4, cavity);
+		rock_w = clamp(rock_w, 0.0, 1.0);
+		sand_w = clamp(max(sand_w, cavity * (1.0 - smoothstep(8.0, 30.0, dist))), 0.0, 1.0);
+		sand_w = clamp(sand_w * (1.0 - rock_w), 0.0, 1.0);
 
-	// Grass tongues into the back of the sand, ahead of the painted vegetation line.
-	float veg_w = smoothstep(sand_edge * 0.42, sand_edge * 0.95, dist);
-	veg_w *= 1.0 - smoothstep(0.08, 0.32, slope);
-	veg_w *= smoothstep(1.05, 2.2, height) * (1.0 - smoothstep(6.0, 15.0, height));
-	veg_w *= smoothstep(0.46, 0.74, n_break);
-	veg_w = clamp(veg_w * (1.0 - rock_w) * (1.0 - sand_w * 0.65), 0.0, 1.0);
-	float paint_w = max(1.0 - sand_w - rock_w - veg_w, 0.0);
-	float sumw = max(sand_w + rock_w + veg_w + paint_w, 0.001);
-	sand_w /= sumw;
-	rock_w /= sumw;
-	veg_w /= sumw;
-	paint_w /= sumw;
+		// Grass tongues into the back of the sand, ahead of the painted vegetation line.
+		float veg_w = smoothstep(sand_edge * 0.42, sand_edge * 0.95, dist);
+		veg_w *= 1.0 - smoothstep(0.08, 0.32, slope);
+		veg_w *= smoothstep(1.05, 2.2, height) * (1.0 - smoothstep(6.0, 15.0, height));
+		veg_w *= smoothstep(0.46, 0.74, n_break);
+		veg_w = clamp(veg_w * (1.0 - rock_w) * (1.0 - sand_w * 0.65), 0.0, 1.0);
+		float paint_w = max(1.0 - sand_w - rock_w - veg_w, 0.0);
+		float sumw = max(sand_w + rock_w + veg_w + paint_w, 0.001);
+		sand_w /= sumw;
+		rock_w /= sumw;
+		veg_w /= sumw;
+		paint_w /= sumw;
 
-	vec2 ddx = base_ddx.xz;
-	vec2 ddy = base_ddy.xz;
-	vec3 sand_hi = coast_albedo(3, world_xz, ddx, ddy).rgb;
-	vec3 sand_lo = coast_albedo(3, world_xz * 0.27 + vec2(37.0, -18.0), ddx, ddy).rgb;
-	float macro = coast_fbm(world_xz * 0.018);
-	float meso = coast_fbm(world_xz * 0.09 + vec2(4.0, 9.0));
-	float grit = coast_noise(world_xz * 6.5);
-	float specks = smoothstep(0.78, 0.93, coast_fbm(world_xz * 1.7 + vec2(1.0, 5.0)));
-	vec3 sand_col = mix(sand_hi, sand_lo, 0.35 + 0.2 * macro);
-	// Cool near-black, but the floor stays high enough that grain and ripples survive the sun.
-	sand_col *= mix(vec3(0.78, 0.84, 0.98), vec3(1.08, 1.12, 1.22), meso);
-	sand_col *= mix(0.84, 1.2, macro);
-	sand_col *= mix(0.86, 1.16, grit);
-	sand_col = mix(sand_col, sand_col * vec3(1.15, 1.2, 1.28) + vec3(0.008, 0.01, 0.016), specks * 0.28);
+		vec2 ddx = base_ddx.xz;
+		vec2 ddy = base_ddy.xz;
+		vec3 sand_hi = coast_albedo(3, world_xz, ddx, ddy).rgb;
+		vec3 sand_lo = coast_albedo(3, world_xz * 0.27 + vec2(37.0, -18.0), ddx, ddy).rgb;
+		float macro = coast_fbm(world_xz * 0.018);
+		float meso = coast_fbm(world_xz * 0.09 + vec2(4.0, 9.0));
+		float grit = coast_noise(world_xz * 6.5);
+		float specks = smoothstep(0.78, 0.93, coast_fbm(world_xz * 1.7 + vec2(1.0, 5.0)));
+		vec3 sand_col = mix(sand_hi, sand_lo, 0.35 + 0.2 * macro);
+		// Cool near-black, but the floor stays high enough that grain and ripples survive the sun.
+		sand_col *= mix(vec3(0.78, 0.84, 0.98), vec3(1.08, 1.12, 1.22), meso);
+		sand_col *= mix(0.84, 1.2, macro);
+		sand_col *= mix(0.86, 1.16, grit);
+		sand_col = mix(sand_col, sand_col * vec3(1.15, 1.2, 1.28) + vec3(0.008, 0.01, 0.016), specks * 0.28);
 
-	vec3 rock_col = coast_albedo(0, world_xz, ddx, ddy).rgb;
-	// Dark grey basalt, a step lighter and more neutral than the blue-black sand so the shelves read.
-	rock_col = rock_col * vec3(0.72, 0.74, 0.78) + vec3(0.012, 0.013, 0.015);
-	rock_col *= mix(0.75, 1.15, coast_fbm(world_xz * 0.03 + vec2(8.0, 1.0)));
-	vec3 veg_col = coast_albedo(2, world_xz * 1.15, ddx, ddy).rgb;
+		vec3 rock_col = coast_albedo(0, world_xz, ddx, ddy).rgb;
+		// Dark grey basalt, a step lighter and more neutral than the blue-black sand so the shelves read.
+		rock_col = rock_col * vec3(0.72, 0.74, 0.78) + vec3(0.012, 0.013, 0.015);
+		rock_col *= mix(0.75, 1.15, coast_fbm(world_xz * 0.03 + vec2(8.0, 1.0)));
+		vec3 veg_col = coast_albedo(2, world_xz * 1.15, ddx, ddy).rgb;
 
-	vec4 sand_nrm = coast_normal(3, world_xz, ddx, ddy);
-	sand_nrm.xy = clamp((sand_nrm.xy - 0.5) * 0.55 + 0.5, 0.0, 1.0);
-	vec4 rock_nrm = coast_normal(0, world_xz, ddx, ddy);
-	rock_nrm.xy = clamp((rock_nrm.xy - 0.5) * 1.85 + 0.5, 0.0, 1.0);
-	vec3 albedo = painted_albedo * paint_w + sand_col * sand_w + rock_col * rock_w + veg_col * veg_w;
-	vec3 nrm = painted_normal * paint_w + sand_nrm.rgb * sand_w + rock_nrm.rgb * rock_w + painted_normal * veg_w;
-	float rock_rough = max(rock_nrm.a, 0.92);
-	float rough = painted_rough * paint_w + sand_nrm.a * sand_w + rock_rough * rock_w + painted_rough * veg_w;
-	float spec = painted_spec * (paint_w + veg_w) + (1.0 - sand_nrm.a) * sand_w * 0.22 + (1.0 - rock_rough) * rock_w * 0.08;
+		vec4 sand_nrm = coast_normal(3, world_xz, ddx, ddy);
+		sand_nrm.xy = clamp((sand_nrm.xy - 0.5) * 0.55 + 0.5, 0.0, 1.0);
+		vec4 rock_nrm = coast_normal(0, world_xz, ddx, ddy);
+		rock_nrm.xy = clamp((rock_nrm.xy - 0.5) * 1.85 + 0.5, 0.0, 1.0);
+		albedo = painted_albedo * paint_w + sand_col * sand_w + rock_col * rock_w + veg_col * veg_w;
+		nrm = painted_normal * paint_w + sand_nrm.rgb * sand_w + rock_nrm.rgb * rock_w + painted_normal * veg_w;
+		float rock_rough = max(rock_nrm.a, 0.92);
+		rough = painted_rough * paint_w + sand_nrm.a * sand_w + rock_rough * rock_w + painted_rough * veg_w;
+		spec = painted_spec * (paint_w + veg_w) + (1.0 - sand_nrm.a) * sand_w * 0.22 + (1.0 - rock_rough) * rock_w * 0.08;
 
-	// Wave reach shares the ocean shader's phase so the sheen climbs and falls with the wash.
-	float wave_a = dot(world_xz, vec2(0.063, 0.079)) - TIME * 0.96;
-	float wave_b = dot(world_xz, vec2(-0.091, 0.041)) - TIME * 1.14;
-	float phase = TIME * 0.92 + 0.37 * sin(dot(world_xz, vec2(0.027, 0.016))) + 0.26 * sin(wave_b);
-	float tide = sin(phase);
-	// Wet sand is darker than the dry beach and glossy. The upper edge is a soft, wandering
-	// falloff, not a height contour. Normals stay grainy so the sky reflection sparkles
-	// instead of forming a pale stripe.
-	float wet_n = coast_fbm(world_xz * 0.22 + vec2(3.0, 9.0));
-	float reach = 0.12 + 0.62 * max(tide, 0.0) + 0.1 * sin(wave_a);
-	reach += (wet_n - 0.5) * 0.55;
-	float wet = 1.0 - smoothstep(reach, reach + 0.55, height);
-	float trail = (1.0 - smoothstep(-0.2, 0.7, tide)) * (1.0 - smoothstep(reach, reach + 0.7, height));
-	wet = max(wet, trail * 0.55);
-	wet *= smoothstep(-0.15, 0.05, height) * max(sand_w, rock_w * 0.35);
-	wet = clamp(wet, 0.0, 1.0);
+		// Wave reach shares the ocean shader's phase so the sheen climbs and falls with the wash.
+		float wave_a = dot(world_xz, vec2(0.063, 0.079)) - TIME * 0.96;
+		float wave_b = dot(world_xz, vec2(-0.091, 0.041)) - TIME * 1.14;
+		float phase = TIME * 0.92 + 0.37 * sin(dot(world_xz, vec2(0.027, 0.016))) + 0.26 * sin(wave_b);
+		float tide = sin(phase);
+		// Wet sand is darker than the dry beach and glossy. The upper edge is a soft, wandering
+		// falloff, not a height contour. Normals stay grainy so the sky reflection sparkles
+		// instead of forming a pale stripe.
+		float wet_n = coast_fbm(world_xz * 0.22 + vec2(3.0, 9.0));
+		float reach = 0.12 + 0.62 * max(tide, 0.0) + 0.1 * sin(wave_a);
+		reach += (wet_n - 0.5) * 0.55;
+		float wet = 1.0 - smoothstep(reach, reach + 0.55, height);
+		float trail = (1.0 - smoothstep(-0.2, 0.7, tide)) * (1.0 - smoothstep(reach, reach + 0.7, height));
+		wet = max(wet, trail * 0.55);
+		wet *= smoothstep(-0.15, 0.05, height) * max(sand_w, rock_w * 0.35);
+		wet = clamp(wet, 0.0, 1.0);
 
-	albedo = mix(albedo, albedo * vec3(0.22, 0.25, 0.32), wet);
-	// Soft sheen on the whole swash. Glints are a sun/view spike on tiny grains, not white blobs.
-	rough = mix(rough, 0.7, wet * (1.0 - rock_w));
-	rough = mix(rough, 0.48, wet * rock_w);
-	spec = mix(spec, 0.28, wet);
-	vec3 n_view = normalize(mat3(TANGENT, BINORMAL, NORMAL) * (nrm * 2.0 - 1.0));
-	vec3 sun_dir = normalize(vec3(-0.55, 0.74, 0.37));
-	vec3 sun_view = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);
-	vec3 half_dir = normalize(sun_view + normalize(-VERTEX));
-	float micro = coast_noise(world_xz * 55.0);
-	float glint = pow(clamp(dot(n_view, half_dir), 0.0, 1.0), 96.0);
-	glint *= smoothstep(0.62, 0.9, micro) * wet;
-	albedo += vec3(0.16, 0.18, 0.2) * glint;
+		albedo = mix(albedo, albedo * vec3(0.22, 0.25, 0.32), wet);
+		// Soft sheen on the whole swash. Glints are a sun/view spike on tiny grains, not white blobs.
+		rough = mix(rough, 0.7, wet * (1.0 - rock_w));
+		rough = mix(rough, 0.48, wet * rock_w);
+		spec = mix(spec, 0.28, wet);
+		vec3 n_view = normalize(mat3(TANGENT, BINORMAL, NORMAL) * (nrm * 2.0 - 1.0));
+		vec3 sun_dir = normalize(vec3(-0.55, 0.74, 0.37));
+		vec3 sun_view = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);
+		vec3 half_dir = normalize(sun_view + normalize(-VERTEX));
+		float micro = coast_noise(world_xz * 55.0);
+		float glint = pow(clamp(dot(n_view, half_dir), 0.0, 1.0), 96.0);
+		glint *= smoothstep(0.62, 0.9, micro) * wet;
+		albedo += vec3(0.16, 0.18, 0.2) * glint;
 
-	// A thin lace only, right against the water. It must not paint the whole bank.
-	float lace = coast_fbm(world_xz * 0.55 + vec2(TIME * 0.08, wet_n * 2.0));
-	float sheets = exp(-height * height * 40.0) * smoothstep(0.55, 0.85, lace);
-	sheets *= (0.35 + 0.65 * max(tide, 0.0));
-	sheets = clamp(sheets, 0.0, 0.22);
-	albedo = mix(albedo, vec3(0.8, 0.84, 0.82), sheets);
-	rough = mix(rough, 0.62, sheets);
-	spec = mix(spec, 0.18, sheets);
+		// A thin lace only, right against the water. It must not paint the whole bank.
+		float lace = coast_fbm(world_xz * 0.55 + vec2(TIME * 0.08, wet_n * 2.0));
+		float sheets = exp(-height * height * 40.0) * smoothstep(0.55, 0.85, lace);
+		sheets *= (0.35 + 0.65 * max(tide, 0.0));
+		sheets = clamp(sheets, 0.0, 0.22);
+		albedo = mix(albedo, vec3(0.8, 0.84, 0.82), sheets);
+		rough = mix(rough, 0.62, sheets);
+		spec = mix(spec, 0.18, sheets);
 
+	}
+	// Distant foliage reads as a canopy even where plant cards are subpixel.
+	float scenic_distance = length(CAMERA_POSITION_WORLD - v_vertex);
+	float canopy = smoothstep(5.5, 17.0, height) * (1.0 - smoothstep(125.0, 191.0, height));
+	canopy *= 1.0 - smoothstep(0.13, 0.27, slope);
+	float lava = smoothstep(220.0, 480.0, world_xz.x) * smoothstep(-160.0, 40.0, world_xz.y);
+	canopy *= 1.0 - lava;
+	if (canopy > 0.0) {
+		float grove = coast_fbm(world_xz * 0.065);
+		float crowns = coast_noise(world_xz * 0.26);
+		float cover = canopy * smoothstep(0.21, 0.60, grove);
+		float range_mix = mix(0.38, 0.90, smoothstep(65.0, 380.0, scenic_distance));
+		vec3 forest = mix(vec3(0.040, 0.089, 0.030), vec3(0.126, 0.239, 0.077), crowns);
+		albedo = mix(albedo, forest, cover * range_mix);
+		rough = mix(rough, 0.91, cover * range_mix);
+	}
+	// Recover warm minerals in the basalt while keeping the wet black sand dark.
+	float green = smoothstep(0.014, 0.14, albedo.g - 0.5 * (albedo.r + albedo.b));
+	float coast_grade = 1.0 - smoothstep(5.0, 28.0, height);
+	vec3 mineral = albedo * mix(vec3(1.09, 1.03, 0.95), vec3(1.13, 1.05, 0.95), coast_grade);
+	mineral += vec3(0.007, 0.004, 0.002) * smoothstep(0.4, 15.0, height);
+	vec3 tropical = albedo * vec3(0.96, 1.07, 1.055);
 	// Apply PBR
-	ALBEDO = albedo;
+	ALBEDO = mix(mineral, tropical, green);
 	ROUGHNESS = clamp(rough, 0.0, 1.0);
 	SPECULAR = clamp(spec, 0.0, 1.0);
 	NORMAL_MAP = nrm;

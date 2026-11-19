@@ -79,3 +79,18 @@ godot --headless --path . --script res://tools/walkability_apply.gd
 ```
 
 Foliage is not moved. Plants that were seated on ground which rose or fell are reported by `tools/walkability_validate.gd` and left where they are.
+
+## Island graphics presets
+
+Press **F6** while playing to cycle Low, Medium, and High. Medium is the scene
+default. The presets scale the detailed foliage ranges, nearby undergrowth
+radius, Terrain3D patch size, and spray and water detail ranges. High enables
+2× MSAA. All three presets retain the distant canopy, terrain extent, and ocean.
+
+The freshwater validation command checks channel centerlines, terrain contact at
+the mesh rims, connected tributaries and mouths, measured drops, and spray
+geometry. Use fixed in-game cameras to review shader appearance and transitions.
+
+```sh
+godot --headless --path . --script res://tools/verify_freshwater.gd
+```

@@ -17,6 +17,8 @@
 
 [ext_resource type="Script" path="res://freshwater/IslandFreshwater.gd" id="freshwater"]
 
+[ext_resource type="Script" path="res://scenery/IslandScenery.gd" id="scenery"]
+
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("atmosphere")
 shader_parameter/trade_clouds = ExtResource("clouds")
@@ -32,7 +34,7 @@ ambient_light_color = Color(0.83, 0.89, 0.97, 1)
 ambient_light_energy = 0.62
 fog_enabled = true
 fog_light_color = Color(0.70, 0.82, 0.88, 1)
-fog_density = 0.000125
+fog_density = 0.000075
 fog_sky_affect = 0.08
 
 [sub_resource type="ShaderMaterial" id="sea_mat"]
@@ -92,3 +94,6 @@ terrain_path = NodePath("../Terrain3D")
 [node name="SlopeAnalysis" type="Node3D" parent="."]
 editor_description = "Read-only dev overlay, off by default. Check show_overlay or press F8 in play. See tools/README.md. Does not edit terrain."
 script = ExtResource("slope_tool")
+
+[node name="IslandScenery" type="Node3D" parent="."]
+script = ExtResource("scenery")
