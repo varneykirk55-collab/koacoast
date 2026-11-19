@@ -1,35 +1,42 @@
 shader_type spatial;
 render_mode cull_disabled, specular_schlick_ggx, shadows_disabled;
 
+uniform sampler2D flow_detail : repeat_enable, filter_linear_mipmap;
+uniform float detail_range = 175.0;
 varying vec4 channel;
-varying vec2 world_xz;
+varying float camera_range;
 
 void vertex() {
 	channel = COLOR;
-	world_xz = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	camera_range = distance(CAMERA_POSITION_WORLD, (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 
 void fragment() {
-	float cross_flow = UV.x;
+	float across = UV.x;
 	float travel = UV.y;
-	float speed = mix(1.15, 7.0, channel.g);
-	float t = travel - TIME * speed;
-	float riffles = sin(t * 5.6 + sin(cross_flow * 20.0 + travel * 0.6));
-	float threads = sin(cross_flow * 73.0 + sin(t * 0.8) * 0.8);
-	float ripples = sin(t * 2.2 + cross_flow * 11.0);
-	float slope_foam = smoothstep(0.4, 0.93, riffles * 0.43 + threads * 0.35 + ripples * 0.22);
-	float impact = channel.b * smoothstep(-0.25, 0.75, riffles * 0.55 + threads * 0.45);
-	float foam = max(slope_foam * channel.g, impact);
-	float depth = channel.r;
-	vec3 shallows = vec3(0.07, 0.34, 0.27);
-	vec3 deep = vec3(0.014, 0.19, 0.19);
-	vec3 water = mix(shallows, deep, depth);
-	float bank = smoothstep(0.05, 0.32, depth);
-	float grain = sin(world_xz.x * 4.3) * sin(world_xz.y * 5.1);
-	water = mix(vec3(0.10, 0.14, 0.108) + grain * 0.022, water, bank);
-	water += riffles * 0.013 + ripples * 0.012;
-	water = mix(water, vec3(0.045, 0.33, 0.37), channel.a * 0.78);
-	ALBEDO = mix(water, vec3(0.74, 0.88, 0.86), foam);
-	ROUGHNESS = mix(0.22, 0.61, foam);
-	SPECULAR = mix(0.53, 0.19, foam);
+	float fall = UV2.x;
+	float width = max(0.25, UV2.y);
+	float strength = max(fall, channel.g * 0.42);
+	float t = travel - TIME * mix(0.75, 8.5, strength);
+	float fade_detail = 1.0 - smoothstep(detail_range * 0.65, detail_range, camera_range);
+	vec3 streak = texture(flow_detail, vec2(across * width * 0.36, t * 0.085)).rgb;
+	float curls = streak.g;
+	if (fade_detail > 0.0) {
+		curls = mix(curls, texture(flow_detail, vec2(across * width * 0.83 + streak.b * 0.16, t * 0.24)).b, 0.55 * fade_detail);
+	}
+	float edge = min(across, 1.0 - across);
+	float core = smoothstep(0.015 + streak.r * 0.045, 0.21, edge);
+	float whitewater = strength * smoothstep(0.23, 0.74, curls + fall * 0.23);
+	float falling_sheet = fall * mix(0.55, 1.0, core) * mix(0.48, 0.88, streak.r);
+	float impact = channel.b * smoothstep(0.17, 0.70, 0.65 * curls + 0.4 * core);
+	float foam = clamp(max(whitewater, falling_sheet) + impact * 0.68, 0.0, 1.0);
+
+	vec3 stone_water = vec3(0.082, 0.12, 0.106);
+	vec3 deep = vec3(0.035, 0.14, 0.13);
+	vec3 water = mix(stone_water, deep, smoothstep(0.03, 0.79, channel.r));
+	water = mix(water, vec3(0.075, 0.205, 0.218), channel.a * 0.6);
+	water += (curls - 0.5) * 0.065;
+	ALBEDO = mix(water, vec3(0.81, 0.86, 0.84), foam * mix(core, 1.0, fall));
+	ROUGHNESS = mix(0.19, 0.73, foam);
+	SPECULAR = mix(0.51, 0.16, foam);
 }

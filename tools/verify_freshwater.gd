@@ -35,7 +35,7 @@ func _verify() -> void:
 			_channel(stream, group.get_node("Tributary%d" % (i + 1)), terrain)
 			_streams += 1
 	var spray: MeshInstance3D = water.get_node("WaterfallSpray")
-	_check(spray.mesh.surface_get_array_len(0) == _falls * 9 * 6, "Spray at every fall")
+	_check(spray.mesh.surface_get_array_len(0) == _falls * 15 * 6, "Spray at every fall")
 	print("RIVERS %d STREAMS %d FALLS %d POOLS %d TRIANGLES %d MAX_CENTER_DEPTH %.2f m" %
 		[WATERSHEDS.data.size(), _streams, _falls, _pools, _tris, _max_clearance])
 	for failure in _failures:
