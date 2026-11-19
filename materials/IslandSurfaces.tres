@@ -1,0 +1,61 @@
+[gd_resource type="Terrain3DAssets" format=3]
+
+[ext_resource type="Texture2D" path="res://materials/surfaces/Basalt_AH.png" id="Basalt_AH"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/Basalt_NR.png" id="Basalt_NR"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/Laterite_AH.png" id="Laterite_AH"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/Laterite_NR.png" id="Laterite_NR"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/ValleyGrass_AH.png" id="ValleyGrass_AH"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/ValleyGrass_NR.png" id="ValleyGrass_NR"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/BlackSand_AH.png" id="BlackSand_AH"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/BlackSand_NR.png" id="BlackSand_NR"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/WetBasalt_AH.png" id="WetBasalt_AH"]
+[ext_resource type="Texture2D" path="res://materials/surfaces/WetBasalt_NR.png" id="WetBasalt_NR"]
+
+[sub_resource type="Terrain3DTextureAsset" id="Basalt"]
+name = "Basalt"
+albedo_color = Color(0.81, 0.82, 0.83, 1)
+id = 0
+albedo_texture = ExtResource("Basalt_AH")
+normal_texture = ExtResource("Basalt_NR")
+uv_scale = 0.18
+detiling_rotation = 0.23
+
+
+[sub_resource type="Terrain3DTextureAsset" id="Laterite"]
+name = "Laterite"
+albedo_color = Color(0.78, 0.70, 0.67, 1)
+id = 1
+albedo_texture = ExtResource("Laterite_AH")
+normal_texture = ExtResource("Laterite_NR")
+uv_scale = 0.26
+detiling_rotation = 0.23
+
+
+[sub_resource type="Terrain3DTextureAsset" id="ValleyGrass"]
+name = "ValleyGrass"
+id = 2
+albedo_texture = ExtResource("ValleyGrass_AH")
+normal_texture = ExtResource("ValleyGrass_NR")
+uv_scale = 0.36
+detiling_rotation = 0.23
+
+
+[sub_resource type="Terrain3DTextureAsset" id="BlackSand"]
+name = "BlackSand"
+id = 3
+albedo_texture = ExtResource("BlackSand_AH")
+normal_texture = ExtResource("BlackSand_NR")
+uv_scale = 0.46
+detiling_rotation = 0.23
+
+
+[sub_resource type="Terrain3DTextureAsset" id="WetBasalt"]
+name = "WetBasalt"
+id = 4
+albedo_texture = ExtResource("WetBasalt_AH")
+normal_texture = ExtResource("WetBasalt_NR")
+uv_scale = 0.22
+detiling_rotation = 0.23
+
+[resource]
+texture_list = Array[Terrain3DTextureAsset]([SubResource("Basalt"), SubResource("Laterite"), SubResource("ValleyGrass"), SubResource("BlackSand"), SubResource("WetBasalt")])

@@ -1,0 +1,80 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://foliage/IslandVegetation.scn" id="plants"]
+[ext_resource type="Terrain3DMaterial" path="res://materials/TerrainMaterial.tres" id="terrain"]
+[ext_resource type="Terrain3DAssets" path="res://materials/IslandSurfaces.tres" id="surfaces"]
+[ext_resource type="Shader" path="res://materials/ShoreWater.gdshader" id="water"]
+[ext_resource type="Texture2D" path="res://materials/CoastalShelf.png" id="shelf"]
+
+[ext_resource type="Shader" path="res://materials/MaritimeSky.gdshader" id="atmosphere"]
+
+[ext_resource type="Texture2D" path="res://materials/TradeClouds.png" id="clouds"]
+[ext_resource type="ArrayMesh" path="res://materials/OceanSurface.res" id="sea_grid"]
+[ext_resource type="Texture2D" path="res://materials/OceanDetail.png" id="wave_detail"]
+[ext_resource type="PackedScene" path="res://player/Player.tscn" id="player"]
+
+[sub_resource type="ShaderMaterial" id="sky_mat"]
+shader = ExtResource("atmosphere")
+shader_parameter/trade_clouds = ExtResource("clouds")
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="air"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.83, 0.89, 0.97, 1)
+ambient_light_energy = 0.62
+fog_enabled = true
+fog_light_color = Color(0.70, 0.82, 0.88, 1)
+fog_density = 0.000125
+fog_sky_affect = 0.08
+
+[sub_resource type="ShaderMaterial" id="sea_mat"]
+shader = ExtResource("water")
+shader_parameter/coastal_shelf = ExtResource("shelf")
+
+shader_parameter/ocean_detail = ExtResource("wave_detail")
+
+[node name="KoaCoast" type="Node3D"]
+
+[node name="Terrain3D" type="Terrain3D" parent="."]
+editor_description = "Native 2 m height and control samples. Sculpt and paint here. Full terrain collision is enabled. Adjust texture scale in materials/IslandSurfaces.tres. The ocean shelf texture is baked separately and needs updating after coastline edits."
+region_size = 256
+vertex_spacing = 2.0
+material = ExtResource("terrain")
+assets = ExtResource("surfaces")
+data_directory = "res://terrain/regions"
+collision_mode = 3
+collision_layer = 1
+
+[node name="PacificOcean" type="MeshInstance3D" parent="."]
+editor_description = "Mean sea level is Y = 0. Adjust the water palette in the surface ShaderMaterial."
+mesh = ExtResource("sea_grid")
+material_override = SubResource("sea_mat")
+extra_cull_margin = 0.5
+cast_shadow = 0
+
+[node name="TradeWindSky" type="WorldEnvironment" parent="."]
+environment = SubResource("air")
+
+[node name="LateMorningSun" type="DirectionalLight3D" parent="."]
+rotation = Vector3(-0.8376, -0.99, 0)
+light_color = Color(1, 0.912, 0.775, 1)
+light_energy = 1.19
+shadow_enabled = true
+directional_shadow_max_distance = 2400.0
+
+[node name="CoastalOverlook" type="Camera3D" parent="."]
+position = Vector3(550, 475, 1380)
+rotation = Vector3(-0.21, 0.366, 0)
+fov = 46
+near = 1.0
+far = 65000.0
+
+[node name="IslandVegetation" parent="." instance=ExtResource("plants")]
+
+[node name="Player" parent="." instance=ExtResource("player")]
+position = Vector3(48, 3.0, 576)
+terrain_path = NodePath("../Terrain3D")
