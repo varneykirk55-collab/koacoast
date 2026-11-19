@@ -12,6 +12,7 @@
 [ext_resource type="ArrayMesh" path="res://materials/OceanSurface.res" id="sea_grid"]
 [ext_resource type="Texture2D" path="res://materials/OceanDetail.png" id="wave_detail"]
 [ext_resource type="PackedScene" path="res://player/KekoaPlayer.tscn" id="player"]
+[ext_resource type="Script" path="res://tools/slope_overlay.gd" id="slope_tool"]
 
 [sub_resource type="ShaderMaterial" id="sky_mat"]
 shader = ExtResource("atmosphere")
@@ -78,3 +79,7 @@ far = 65000.0
 [node name="Player" parent="." instance=ExtResource("player")]
 position = Vector3(48, 3.0, 576)
 terrain_path = NodePath("../Terrain3D")
+
+[node name="SlopeAnalysis" type="Node3D" parent="."]
+editor_description = "Read-only dev overlay, off by default. Check show_overlay or press F8 in play. See tools/README.md. Does not edit terrain."
+script = ExtResource("slope_tool")

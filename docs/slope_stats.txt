@@ -1,0 +1,27 @@
+Koa Coast slope analysis (read only)
+Land is height >= 0 m (mean sea level). Each sample is 2 m.
+Gentle  < 15.0 deg  (30% of player floor_max_angle)
+Moderate  15.0–35.0 deg
+Steep  >= 35.0 deg  (70% of player floor_max_angle)
+Player floor_max_angle  50.00 deg  (slopes at or above this are unwalkable)
+
+Land area  1.604 km²  (401108 samples)
+Gentle      42.52%
+Moderate    32.36%
+Steep       25.12%
+Unwalkable  14.86%  (>= 50.0 deg, included in steep)
+Height range  -72.0 m to 358.5 m
+Steepest land point  86.9 deg at (-20, 38) m, height 164.5 m
+
+Worst steep clusters (cells >= 60 deg, excess slope x area, >= 48 cells)
+1. centroid (-21, 62)  max 86.9 deg at (-20, 38) h 164 m  area 33184 m²  mean 68.5 deg  bounds x -194..220  z -138..196
+2. centroid (58, -162)  max 80.2 deg at (76, -238) h 217 m  area 15044 m²  mean 68.8 deg  bounds x -18..130  z -278..-46
+3. centroid (59, -595)  max 81.9 deg at (-92, -584) h 47 m  area 14028 m²  mean 69.4 deg  bounds x -168..362  z -658..-544
+4. centroid (-213, -126)  max 80.1 deg at (-216, -176) h 234 m  area 15276 m²  mean 68.6 deg  bounds x -306..-90  z -194..-44
+5. centroid (519, -410)  max 81.5 deg at (494, -460) h 43 m  area 7204 m²  mean 71.6 deg  bounds x 372..598  z -516..-210
+6. centroid (-328, -615)  max 80.6 deg at (-264, -636) h 64 m  area 6516 m²  mean 69.1 deg  bounds x -500..-212  z -648..-566
+7. centroid (861, 34)  max 76.8 deg at (872, -70) h 48 m  area 6904 m²  mean 67.1 deg  bounds x 792..902  z -124..238
+8. centroid (-438, -203)  max 76.9 deg at (-436, -246) h 108 m  area 3884 m²  mean 66.3 deg  bounds x -478..-400  z -278..-128
+
+API cross-check  24 vertices  mean |height| 0.0000 m (max 0.0000)  mean |slope-get_normal| 1.88 deg (max 4.61)
+Slope method: central differences on region height maps. Contours every 25 m.
