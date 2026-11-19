@@ -62,23 +62,21 @@ def main() -> None:
     fine = fbm(u * 140.0, v * 140.0, 33, octaves=2)
     pebbles = fbm(u * 22.0, v * 22.0, 51, octaves=4)
 
-    # Charcoal, slightly blue in the hollows and slightly warm on the grains.
-    cool = np.array([22.0, 24.0, 30.0], dtype=np.float32)
-    mid = np.array([34.0, 32.0, 31.0], dtype=np.float32)
-    warm = np.array([52.0, 42.0, 34.0], dtype=np.float32)
-    tone = meso[..., None]
-    rgb = cool + (mid - cool) * np.clip(macro * 1.35, 0.0, 1.0)[..., None]
-    rgb = rgb + (warm - mid) * np.clip((tone - 0.45) * 1.4, 0.0, 1.0)
-    rgb *= 0.82 + 0.36 * grain[..., None]
-    rgb += (fine[..., None] - 0.5) * 10.0
+    # Near-black basalt. Shifts are value and a cool blue-grey, never brown.
+    deep = np.array([12.0, 14.0, 18.0], dtype=np.float32)
+    mid = np.array([22.0, 24.0, 29.0], dtype=np.float32)
+    lift = np.array([36.0, 39.0, 46.0], dtype=np.float32)
+    rgb = deep + (mid - deep) * np.clip(macro * 1.25, 0.0, 1.0)[..., None]
+    rgb = rgb + (lift - mid) * np.clip((meso[..., None] - 0.45) * 1.15, 0.0, 1.0)
+    rgb *= 0.9 + 0.22 * grain[..., None]
+    rgb += (fine[..., None] - 0.5) * np.array([5.0, 5.5, 7.0], dtype=np.float32)
 
-    speck = np.clip((pebbles - 0.72) / 0.18, 0.0, 1.0)
-    pebble_col = np.array([118.0, 104.0, 90.0], dtype=np.float32)
-    rgb = rgb * (1.0 - speck[..., None] * 0.65) + pebble_col * speck[..., None] * 0.65
-    # A few brighter mineral flecks.
-    fleck = np.clip((fbm(u * 90.0, v * 90.0, 70, octaves=2) - 0.86) / 0.1, 0.0, 1.0)
-    rgb = np.maximum(rgb, fleck[..., None] * np.array([150.0, 140.0, 128.0], dtype=np.float32))
-    rgb = np.clip(rgb, 8.0, 190.0)
+    speck = np.clip((pebbles - 0.74) / 0.16, 0.0, 1.0)
+    pebble_col = np.array([72.0, 76.0, 86.0], dtype=np.float32)
+    rgb = rgb * (1.0 - speck[..., None] * 0.55) + pebble_col * speck[..., None] * 0.55
+    fleck = np.clip((fbm(u * 90.0, v * 90.0, 70, octaves=2) - 0.88) / 0.08, 0.0, 1.0)
+    rgb = np.maximum(rgb, fleck[..., None] * np.array([96.0, 102.0, 114.0], dtype=np.float32))
+    rgb = np.clip(rgb, 6.0, 120.0)
 
     height = 0.42 + (grain - 0.5) * 0.10 + (fine - 0.5) * 0.05 + speck * 0.22
     height = np.clip(height, 0.12, 0.92)
@@ -95,8 +93,9 @@ def main() -> None:
     nz = np.ones_like(height)
     inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
     normal = np.dstack([(nx * inv * 0.5 + 0.5) * 255.0, (ny * inv * 0.5 + 0.5) * 255.0, (nz * inv * 0.5 + 0.5) * 255.0])
-    rough = 214.0 - speck * 55.0 - (grain - 0.5) * 18.0
-    rough = np.clip(rough, 150.0, 242.0)
+    # Dry sand stays matte. The shader drops roughness only where the swash wets it.
+    rough = 228.0 - speck * 28.0 - (grain - 0.5) * 10.0
+    rough = np.clip(rough, 190.0, 246.0)
     nrm = np.dstack([normal, rough]).astype(np.uint8)
     Image.fromarray(nrm, mode="RGBA").save(OUT / "BlackSand_NR.png")
     print("wrote black sand", albedo.shape, "rgb mean", rgb.mean(axis=(0, 1)), "rough mean", rough.mean())
