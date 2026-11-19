@@ -1,0 +1,136 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://player/KekoaPlayer.gd" id="1_s2wvc"]
+[ext_resource type="PackedScene" path="res://player/kekoa/Kekoa.fbx" id="2_jla5o"]
+[ext_resource type="AnimationLibrary" path="res://player/kekoa/anims/KekoaAnims.tres" id="3_qcw62"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_n82c5"]
+radius = 0.3
+height = 1.75
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_8h0gt"]
+animation = &"Fall"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_y31nb"]
+animation = &"Jump"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_y3d60"]
+animation = &"Idle"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_c73s6"]
+animation = &"Walk"
+
+[sub_resource type="AnimationNodeAnimation" id="AnimationNodeAnimation_h20vw"]
+animation = &"Run"
+
+[sub_resource type="AnimationNodeBlendSpace1D" id="AnimationNodeBlendSpace1D_cx5ny"]
+min_space = 0.0
+max_space = 8.0
+snap = 0.01
+value_label = "m/s"
+blend_point_0/node = SubResource("AnimationNodeAnimation_y3d60")
+blend_point_0/pos = 0.0
+blend_point_0/name = &"Idle"
+blend_point_1/node = SubResource("AnimationNodeAnimation_c73s6")
+blend_point_1/pos = 1.69
+blend_point_1/name = &"Walk"
+blend_point_2/node = SubResource("AnimationNodeAnimation_h20vw")
+blend_point_2/pos = 5.58
+blend_point_2/name = &"Run"
+
+[sub_resource type="AnimationNodeTimeScale" id="AnimationNodeTimeScale_riam1"]
+
+[sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_pg6mq"]
+nodes/Locomotion/node = SubResource("AnimationNodeBlendSpace1D_cx5ny")
+nodes/Locomotion/position = Vector2(0, 0)
+nodes/Pace/node = SubResource("AnimationNodeTimeScale_riam1")
+nodes/Pace/position = Vector2(240, 0)
+node_connections = [&"output", 0, &"Pace", &"Pace", 0, &"Locomotion"]
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_xnjrb"]
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_d7hqr"]
+xfade_time = 0.1
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ucfuv"]
+xfade_time = 0.25
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_se0ry"]
+xfade_time = 0.15
+switch_mode = 2
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_bf8fd"]
+xfade_time = 0.15
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="AnimationNodeStateMachineTransition_ksg34"]
+xfade_time = 0.15
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_oljah"]
+states/Fall/node = SubResource("AnimationNodeAnimation_8h0gt")
+states/Fall/position = Vector2(550, 200)
+states/Jump/node = SubResource("AnimationNodeAnimation_y31nb")
+states/Jump/position = Vector2(550, 0)
+states/Move/node = SubResource("AnimationNodeBlendTree_pg6mq")
+states/Move/position = Vector2(300, 100)
+transitions = ["Start", "Move", SubResource("AnimationNodeStateMachineTransition_xnjrb"), "Move", "Jump", SubResource("AnimationNodeStateMachineTransition_d7hqr"), "Move", "Fall", SubResource("AnimationNodeStateMachineTransition_ucfuv"), "Jump", "Fall", SubResource("AnimationNodeStateMachineTransition_se0ry"), "Jump", "Move", SubResource("AnimationNodeStateMachineTransition_bf8fd"), "Fall", "Move", SubResource("AnimationNodeStateMachineTransition_ksg34")]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_xgkun"]
+radius = 0.25
+
+[node name="Player" type="CharacterBody3D" unique_id=1566488507]
+collision_layer = 2
+floor_constant_speed = true
+floor_max_angle = 0.87266463
+floor_snap_length = 0.45
+script = ExtResource("1_s2wvc")
+walk_speed = 1.69
+sprint_speed = 5.58
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=1408904550]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.875, 0)
+shape = SubResource("CapsuleShape3D_n82c5")
+
+[node name="Visual" type="Node3D" parent="." unique_id=615149078]
+
+[node name="Kekoa" type="Node3D" parent="Visual" unique_id=357626082 instance=ExtResource("2_jla5o")]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Visual" unique_id=1282135269]
+root_node = NodePath("../Kekoa")
+libraries/ = ExtResource("3_qcw62")
+
+[node name="AnimationTree" type="AnimationTree" parent="Visual" unique_id=1033369096]
+active = false
+root_node = NodePath("../Kekoa")
+callback_mode_process = 0
+tree_root = SubResource("AnimationNodeStateMachine_oljah")
+anim_player = NodePath("../AnimationPlayer")
+parameters/Move/Locomotion/blend_position = 0.0
+parameters/Move/Pace/scale = 1.0
+
+[node name="CameraPivot" type="Node3D" parent="." unique_id=132846215]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.55, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot" unique_id=1561792815]
+transform = Transform3D(1, 0, 0, 0, 0.9689124, 0.24740396, 0, -0.24740396, 0.9689124, 0, 0, 0)
+shape = SubResource("SphereShape3D_xgkun")
+spring_length = 4.0
+margin = 0.25
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D" unique_id=209815698]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.35, 0, 0)
+current = true
+fov = 70.0
+far = 65000.0
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=140043632]
+
+[node name="Info" type="Label" parent="HUD" unique_id=894657229]
+offset_left = 12.0
+offset_top = 10.0
+offset_right = 900.0
+offset_bottom = 60.0
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "Idle"
