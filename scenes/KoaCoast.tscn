@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://foliage/IslandVegetation.scn" id="plants"]
+[ext_resource type="Script" path="res://foliage/ValleyUndergrowth.gd" id="undergrowth"]
 [ext_resource type="Terrain3DMaterial" path="res://materials/TerrainMaterial.tres" id="terrain"]
 [ext_resource type="Terrain3DAssets" path="res://materials/IslandSurfaces.tres" id="surfaces"]
 [ext_resource type="Shader" path="res://materials/ShoreWater.gdshader" id="water"]
@@ -74,6 +75,9 @@ near = 1.0
 far = 65000.0
 
 [node name="IslandVegetation" parent="." instance=ExtResource("plants")]
+
+[node name="ValleyUndergrowth" type="Node3D" parent="."]
+script = ExtResource("undergrowth")
 
 [node name="Player" parent="." instance=ExtResource("player")]
 position = Vector3(48, 3.0, 576)
