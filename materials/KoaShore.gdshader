@@ -114,6 +114,7 @@ struct material {
 };
 
 uniform sampler2D volcanic_deposit : filter_linear, repeat_disable;
+uniform bool volcanic_has_deposit = false;
 uniform float volcanic_glow = 0.0;
 varying vec3 v_vertex;
 varying float v_vertex_xz_dist;
@@ -911,15 +912,20 @@ void fragment() {
 	vec3 tropical = albedo * vec3(0.94, 1.13, 1.07);
 	// Apply PBR
 	vec2 deposit_uv = (v_vertex.xz + vec2(1152.0)) / 2304.0;
-	float ash = texture(volcanic_deposit, deposit_uv).r;
+	float ash = volcanic_has_deposit ? texture(volcanic_deposit, deposit_uv).r : 0.0;
 	ALBEDO = mix(mix(mineral, tropical, green), vec3(.19,.165,.145),
 		ash * .70 * smoothstep(.65,2.0,v_vertex.y));
-	float summit = 1.0 - smoothstep(14.0,57.0,length(v_vertex-vec3(48.0,358.51,-126.0)));
-	float field = 1.0 - smoothstep(17.0,73.0,length((v_vertex.xz-vec2(534.0,106.0))/vec2(1.45,1.0)));
-	float cracks = pow(1.0-abs(sin(v_vertex.x*.32+v_vertex.z*.23+sin(v_vertex.z*.47)*1.9)), 14.0);
-	EMISSION = vec3(1.0,.18,.026) * volcanic_glow * cracks
-		* max(summit, field * (1.0 - green) * smoothstep(15.0,55.0,v_vertex.y))
-		* (.47+.25*sin(TIME*1.6+v_vertex.z*.14));
+	EMISSION = vec3(0.0);
+	if (volcanic_glow > 0.0) {
+		float summit = 1.0 - smoothstep(14.0,57.0,length(v_vertex-vec3(48.0,358.51,-126.0)));
+		float field = 1.0 - smoothstep(17.0,73.0,length((v_vertex.xz-vec2(534.0,106.0))/vec2(1.45,1.0)));
+		if (max(summit, field) > 0.0) {
+			float cracks = pow(1.0-abs(sin(v_vertex.x*.32+v_vertex.z*.23+sin(v_vertex.z*.47)*1.9)), 14.0);
+			EMISSION = vec3(1.0,.18,.026) * volcanic_glow * cracks
+				* max(summit, field * (1.0 - green) * smoothstep(15.0,55.0,v_vertex.y))
+				* (.47+.25*sin(TIME*1.6+v_vertex.z*.14));
+		}
+	}
 	ROUGHNESS = clamp(rough, 0.0, 1.0);
 	SPECULAR = clamp(spec, 0.0, 1.0);
 	NORMAL_MAP = nrm;

@@ -7,12 +7,13 @@ const SOUND_ROOT := "res://audio/sounds/"
 const VOICE_LIMIT := 8
 const SILENCE := -65.0
 const WATER_TILE := 16.0
+const COAST_TILE := 128.0
 
 @onready var player: CharacterBody3D = $"../Player"
 @onready var terrain: Terrain3D = $"../Terrain3D"
 
 var sites: Array[Dictionary] = []
-var coast: PackedVector3Array
+var coast_grid := {}
 var bed: Dictionary = {}
 var voices: Array[AudioStreamPlayer3D] = []
 var assignments: Array[int] = []
@@ -123,7 +124,11 @@ func _survey_coast() -> void:
 				var nearby := terrain.data.get_height(p + offset)
 				if not is_finite(nearby) or (h > 0.0) == (nearby > 0.0):
 					continue
-				coast.append(p + offset * clampf(h / (h - nearby), 0.0, 1.0))
+				var point := p + offset * clampf(h / (h - nearby), 0.0, 1.0)
+				var key := _coast_cell(point.x, point.z)
+				if not coast_grid.has(key):
+					coast_grid[key] = PackedVector3Array()
+				coast_grid[key].append(point)
 
 
 func _survey_water() -> void:
@@ -207,14 +212,26 @@ func _process(delta: float) -> void:
 		_call_bird(p)
 
 
+func _coast_cell(x: float, z: float) -> Vector2i:
+	return Vector2i(floori(x/COAST_TILE), floori(z/COAST_TILE))
+
+
 func _update_zone(p: Vector3) -> void:
 	var nearest := Vector3(INF, INF, INF)
-	var distance := INF
-	for point in coast:
-		var d := Vector2(point.x - p.x, point.z - p.z).length_squared()
-		if d < distance:
-			nearest = point
-			distance = d
+	# Beyond this radius surf is silent and the other ambient curves are saturated.
+	var distance := 250.0 * 250.0
+	var first := _coast_cell(p.x-250, p.z-250)
+	var last := _coast_cell(p.x+250, p.z+250)
+	for x in range(first.x,last.x+1):
+		for z in range(first.y,last.y+1):
+			var key := Vector2i(x,z)
+			if not coast_grid.has(key):
+				continue
+			for point: Vector3 in coast_grid[key]:
+				var d := Vector2(point.x-p.x, point.z-p.z).length_squared()
+				if d < distance:
+					nearest = point
+					distance = d
 	shore_distance = sqrt(distance)
 	var near_water := 1.0 - smoothstep(16.0, 205.0, shore_distance)
 	var highland := smoothstep(85.0, 255.0, p.y)

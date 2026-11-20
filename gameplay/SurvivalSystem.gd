@@ -142,6 +142,7 @@ func _connect_signals() -> void:
 	hud.system_menu.load_requested.connect(perform_load)
 	hud.system_menu.designate_home_requested.connect(perform_designate_home_shelter)
 	hud.system_menu.new_game_requested.connect(perform_new_game)
+	hud.system_menu.graphics_requested.connect($"../IslandScenery".cycle_quality)
 	crafting.item_crafted.connect(_on_item_crafted)
 	buildings.build_mode_changed.connect(_on_build_mode_changed)
 
@@ -153,6 +154,10 @@ func _init_navigation_map() -> void:
 		var map_data := IslandMapGenerator.generate_map(_terrain)
 		hud.set_map_data(map_data["texture"], map_data["world_rect"])
 		_map_initialized = true
+
+
+func set_graphics_quality(label: String) -> void:
+	hud.system_menu.set_graphics_quality(label)
 
 
 func _process(_delta: float) -> void:
@@ -170,7 +175,7 @@ func _process(_delta: float) -> void:
 		hud.update_navigation(_player.global_position, facing, buildings.get_base_markers())
 	if death_recovery:
 		hud.update_recovery_indicator(death_recovery.get_latest_cache_indicator(_player.global_position))
-	if vitals:
+	if vitals and hud.is_debug_visible():
 		var dbg := vitals.get_debug_summary()
 		if day_night:
 			dbg += "\n" + day_night.get_clock_string()
@@ -687,9 +692,9 @@ func _update_interaction_target(facing: Vector3) -> void:
 	var col_spot := collectibles.find_nearest_collectible(p)
 	var door_entry := buildings.find_nearest_door(p)
 	var campfire_entry := buildings.find_nearest_campfire(p)
-	var reinforce_entry := buildings.find_nearest_reinforceable(p)
+	var reinforce_entry := {} if buildings.build_mode else buildings.find_nearest_reinforceable(p)
 	var rain_col := water_system.find_nearest_collector(p)
-	var res_node := resources.find_nearest_target(p, facing)
+	var res_node := {} if buildings.build_mode else resources.find_nearest_target(p, facing)
 
 	var best_type := ""
 	var best_data: Dictionary = {}

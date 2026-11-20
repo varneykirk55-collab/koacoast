@@ -81,7 +81,9 @@ func set_interaction_prompt(text: String) -> void:
 	if text == "":
 		_prompt_panel.visible = false
 	else:
-		_prompt_label.text = "[E / X] %s" % text
+		var prompt := "[E / X] %s" % text
+		if _prompt_label.text != prompt:
+			_prompt_label.text = prompt
 		_prompt_panel.visible = true
 
 
@@ -150,6 +152,10 @@ func is_any_modal_open() -> bool:
 func toggle_debug_panel() -> void:
 	if _debug_panel:
 		_debug_panel.visible = not _debug_panel.visible
+
+
+func is_debug_visible() -> bool:
+	return is_instance_valid(_debug_panel) and _debug_panel.visible
 
 
 func update_debug_vitals(text: String) -> void:
