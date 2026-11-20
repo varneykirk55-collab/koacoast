@@ -18,7 +18,7 @@ func has_save() -> bool:
 	return FileAccess.file_exists(save_path)
 
 
-func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> Dictionary:
+func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> Dictionary:
 	if player == null or inventory == null or resources == null or collectibles == null or buildings == null:
 		return { "ok": false, "reason": "Missing system reference" }
 
@@ -46,6 +46,8 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 		payload["rain_collectors"] = water_system.serialize()
 	if day_night:
 		payload["day_night"] = day_night.serialize()
+	if death_recovery:
+		payload["death_recovery"] = death_recovery.serialize()
 
 	var json_str := JSON.stringify(payload, "\t")
 	var tmp_path := save_path + ".tmp"
@@ -67,7 +69,7 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "path": save_path }
 
 
-func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> Dictionary:
+func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> Dictionary:
 	if not FileAccess.file_exists(save_path):
 		return { "ok": false, "reason": "No save file found" }
 	var file := FileAccess.open(save_path, FileAccess.READ)
@@ -100,13 +102,25 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 		water_system.deserialize(data["rain_collectors"])
 	if day_night and data.has("day_night") and data["day_night"] is Dictionary:
 		day_night.deserialize(data["day_night"])
+	if death_recovery:
+		if data.has("death_recovery") and data["death_recovery"] is Dictionary:
+			death_recovery.deserialize(data["death_recovery"])
+		else:
+			# Older compatible save without death_recovery section.
+			death_recovery.clear_all()
 	if data.has("player") and data["player"] is Dictionary:
 		_apply_player_state(player, data["player"])
+	# If save was captured mid-death, immediately place player safely alive at respawn without re-dropping gear.
+	if vitals and vitals.is_dead and death_recovery:
+		var info := death_recovery.resolve_respawn_location()
+		if player:
+			player.global_position = info["pos"]
+		vitals.apply_respawn_vitals(death_recovery.respawn_health_ratio, death_recovery.respawn_hunger, death_recovery.respawn_thirst, death_recovery.respawn_stamina_ratio)
 
 	return { "ok": true, "version": version }
 
 
-func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> void:
+func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> void:
 	if inventory:
 		inventory.clear()
 	if resources:
@@ -121,6 +135,8 @@ func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGat
 		water_system.clear_all()
 	if day_night:
 		day_night.reset_all()
+	if death_recovery:
+		death_recovery.clear_all()
 	if player:
 		player.global_position = _spawn_position
 		if player is CharacterBody3D:

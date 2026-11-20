@@ -5,6 +5,7 @@ extends Node
 
 signal critical_warning(category: StringName, message: String)
 signal vitals_changed
+signal player_died(cause: StringName, cause_label: String)
 
 @export_group("Core Vitals")
 @export var max_health := 100.0
@@ -35,10 +36,19 @@ signal vitals_changed
 @export var stamina_base_regen := 16.0
 @export var exhaustion_recover_threshold := 15.0
 
+@export_group("Survival Trauma (Post-Death Debuff)")
+@export var trauma_max_stamina_multiplier := 0.75
+@export var trauma_stamina_regen_multiplier := 0.80
+@export var trauma_craft_time_multiplier := 1.25
+
 var health := 100.0
 var stamina := 100.0
 var hunger := 100.0
 var thirst := 100.0
+var is_dead := false
+var last_damage_cause: StringName = &""
+var last_damage_label := ""
+var survival_trauma_remaining := 0.0
 
 ## Extensible environment hooks (populated by future weather/day-night/volcano systems).
 var daytime_heat_multiplier := 1.0
@@ -73,6 +83,10 @@ func reset_all() -> void:
 	stamina = base_max_stamina
 	hunger = 100.0
 	thirst = 100.0
+	is_dead = false
+	last_damage_cause = &""
+	last_damage_label = ""
+	survival_trauma_remaining = 0.0
 	effective_max_stamina = base_max_stamina
 	stamina_regen_multiplier = 1.0
 	move_speed_multiplier = 1.0
@@ -83,6 +97,66 @@ func reset_all() -> void:
 	_activity_timer = 0.0
 	_dehydration_zero_time = 0.0
 	_warned_states.clear()
+	_recompute_penalties()
+	_sync_player_modifiers()
+	vitals_changed.emit()
+
+
+## Centralized damage entry point used by starvation, dehydration, wildlife, and hazards.
+func apply_damage(amount: float, cause: StringName = &"environment", cause_label: String = "Environmental Hazard") -> float:
+	if is_dead or amount <= 0.0:
+		return 0.0
+	var prev := health
+	health = maxf(0.0, health - amount)
+	var applied := prev - health
+	last_damage_cause = cause
+	last_damage_label = cause_label
+	vitals_changed.emit()
+	if health <= 0.0 and not is_dead:
+		is_dead = true
+		player_died.emit(cause, cause_label)
+	return applied
+
+
+func has_survival_trauma() -> bool:
+	return survival_trauma_remaining > 0.0
+
+
+func apply_survival_trauma(duration_seconds: float) -> void:
+	# Repeated deaths reset the debuff duration rather than stacking penalties.
+	survival_trauma_remaining = maxf(0.0, duration_seconds)
+	_recompute_penalties()
+	_sync_player_modifiers()
+	vitals_changed.emit()
+
+
+func tick_survival_trauma(in_game_seconds: float) -> void:
+	if survival_trauma_remaining <= 0.0 or in_game_seconds <= 0.0:
+		return
+	var was_active := survival_trauma_remaining > 0.0
+	survival_trauma_remaining = maxf(0.0, survival_trauma_remaining - in_game_seconds)
+	if was_active and survival_trauma_remaining <= 0.0:
+		_recompute_penalties()
+		_sync_player_modifiers()
+		vitals_changed.emit()
+
+
+func get_crafting_duration_multiplier() -> float:
+	return trauma_craft_time_multiplier if has_survival_trauma() else 1.0
+
+
+func apply_respawn_vitals(health_ratio := 0.60, hunger_pct := 40.0, thirst_pct := 40.0, stamina_ratio := 0.50) -> void:
+	is_dead = false
+	health = clampf(max_health * health_ratio, 1.0, max_health)
+	hunger = clampf(hunger_pct, 0.0, 100.0)
+	thirst = clampf(thirst_pct, 0.0, 100.0)
+	_dehydration_zero_time = 0.0
+	_activity_override = &""
+	_activity_timer = 0.0
+	exhausted = false
+	_warned_states.clear()
+	_recompute_penalties()
+	stamina = clampf(effective_max_stamina * stamina_ratio, 0.0, effective_max_stamina)
 	_sync_player_modifiers()
 	vitals_changed.emit()
 
@@ -141,7 +215,11 @@ func drink_water(volume: float, quality: int) -> Dictionary:
 	var effect := WaterQuality.evaluate_drink_effect(quality, volume)
 	var t_before := thirst
 	thirst = clampf(thirst + float(effect["thirst_delta"]), 0.0, 100.0)
-	health = clampf(health + float(effect["health_delta"]), 0.0, max_health)
+	var h_delta := float(effect["health_delta"])
+	if h_delta < 0.0:
+		apply_damage(-h_delta, &"unsafe_water", "Contaminated Water")
+	elif h_delta > 0.0:
+		health = clampf(health + h_delta, 0.0, max_health)
 	if bool(effect["safe"]) and thirst > 0.0:
 		_dehydration_zero_time = 0.0
 	_clear_recovered_warnings()
@@ -153,7 +231,7 @@ func drink_water(volume: float, quality: int) -> Dictionary:
 
 
 func step_simulation(delta: float, activity_override_for_step: StringName = &"") -> void:
-	if delta <= 0.0:
+	if delta <= 0.0 or is_dead:
 		return
 	if _activity_timer > 0.0:
 		_activity_timer = maxf(0.0, _activity_timer - delta)
@@ -193,12 +271,18 @@ func step_simulation(delta: float, activity_override_for_step: StringName = &"")
 			exhausted = false
 			_warned_states.erase(&"exhausted")
 
-	# Continuous starvation & progressive dehydration damage (never instant kill).
-	var total_dps := starvation_damage_rate + dehydration_damage_rate
-	if total_dps > 0.0:
-		health = maxf(0.0, health - total_dps * delta)
+	# Continuous starvation & progressive dehydration damage via centralized death pipeline.
+	if starvation_damage_rate > 0.0 and dehydration_damage_rate > 0.0:
+		var dominant_cause: StringName = &"dehydration" if dehydration_damage_rate >= starvation_damage_rate else &"starvation"
+		var dominant_label := "Dehydration" if dominant_cause == &"dehydration" else "Starvation"
+		apply_damage((starvation_damage_rate + dehydration_damage_rate) * delta, dominant_cause, dominant_label)
+	elif starvation_damage_rate > 0.0:
+		apply_damage(starvation_damage_rate * delta, &"starvation", "Starvation")
+	elif dehydration_damage_rate > 0.0:
+		apply_damage(dehydration_damage_rate * delta, &"dehydration", "Dehydration")
 
-	_check_threshold_warnings()
+	if not is_dead:
+		_check_threshold_warnings()
 	_sync_player_modifiers()
 	vitals_changed.emit()
 
@@ -223,6 +307,10 @@ func get_active_penalties() -> Array[String]:
 		list.append("THIRSTY (Slower Stamina Regen)")
 	if exhausted:
 		list.append("EXHAUSTED (Cannot Sprint)")
+	if has_survival_trauma():
+		var mins := int(floorf(survival_trauma_remaining / 60.0))
+		var secs := int(floorf(fmod(survival_trauma_remaining, 60.0)))
+		list.append("SURVIVAL TRAUMA (%02d:%02d — -25%% Max Stam, -20%% Regen, +25%% Craft Time)" % [mins, secs])
 	return list
 
 
@@ -245,6 +333,8 @@ func serialize() -> Dictionary:
 		"stamina": snappedf(stamina, 0.1),
 		"hunger": snappedf(hunger, 0.1),
 		"thirst": snappedf(thirst, 0.1),
+		"is_dead": is_dead,
+		"survival_trauma_remaining": snappedf(survival_trauma_remaining, 0.1),
 		"dehydration_zero_time": snappedf(_dehydration_zero_time, 0.1),
 		"daytime_heat_multiplier": snappedf(daytime_heat_multiplier, 0.01),
 		"volcanic_ash_exposure": snappedf(volcanic_ash_exposure, 0.01),
@@ -256,6 +346,10 @@ func deserialize(data: Dictionary) -> void:
 	health = clampf(float(data.get("health", max_health)), 0.0, max_health)
 	hunger = clampf(float(data.get("hunger", 100.0)), 0.0, 100.0)
 	thirst = clampf(float(data.get("thirst", 100.0)), 0.0, 100.0)
+	is_dead = bool(data.get("is_dead", false))
+	if health <= 0.0 and not is_dead:
+		health = maxf(1.0, max_health * 0.60)
+	survival_trauma_remaining = maxf(0.0, float(data.get("survival_trauma_remaining", 0.0)))
 	_dehydration_zero_time = maxf(0.0, float(data.get("dehydration_zero_time", 0.0)))
 	daytime_heat_multiplier = clampf(float(data.get("daytime_heat_multiplier", 1.0)), 0.5, 3.0)
 	volcanic_ash_exposure = clampf(float(data.get("volcanic_ash_exposure", 0.0)), 0.0, 1.0)
@@ -322,6 +416,13 @@ func _recompute_penalties() -> void:
 		effective_max_stamina = base_max_stamina
 	else:
 		effective_max_stamina = base_max_stamina
+
+	# Survival Trauma (-25% max stamina, -20% stamina regen) integrates multiplicatively without overwriting hunger/thirst.
+	var trauma_regen := 1.0
+	if has_survival_trauma():
+		effective_max_stamina *= trauma_max_stamina_multiplier
+		trauma_regen = trauma_stamina_regen_multiplier
+
 	stamina = minf(stamina, effective_max_stamina)
 	starvation_damage_rate = starvation_dps if hunger <= 0.0 else 0.0
 
@@ -344,7 +445,7 @@ func _recompute_penalties() -> void:
 		move_speed_multiplier = 1.0
 		dehydration_damage_rate = 0.0
 
-	stamina_regen_multiplier = hunger_regen * thirst_regen
+	stamina_regen_multiplier = hunger_regen * thirst_regen * trauma_regen
 
 
 func _sync_player_modifiers() -> void:

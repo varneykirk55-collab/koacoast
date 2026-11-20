@@ -17,6 +17,13 @@ var _toast_box: VBoxContainer
 var _quick_bar: Label
 var _debug_panel: PanelContainer
 var _debug_label: Label
+var _death_panel: PanelContainer
+var _death_title: Label
+var _death_cause: Label
+var _respawn_banner: Label
+var _respawn_banner_ttl := 0.0
+var _recovery_panel: PanelContainer
+var _recovery_label: Label
 var _toasts: Array[Dictionary] = []
 
 
@@ -46,6 +53,12 @@ func _process(delta: float) -> void:
 			var lbl := _toasts[i]["label"] as Label
 			if lbl:
 				lbl.modulate.a = maxf(0.0, float(_toasts[i]["ttl"]) / 0.6)
+	if _respawn_banner and _respawn_banner.visible:
+		_respawn_banner_ttl -= delta
+		if _respawn_banner_ttl <= 0.0:
+			_respawn_banner.visible = false
+		elif _respawn_banner_ttl < 1.0:
+			_respawn_banner.modulate.a = clampf(_respawn_banner_ttl, 0.0, 1.0)
 
 
 func set_map_data(tex: Texture2D, world_rect: Rect2) -> void:
@@ -142,6 +155,41 @@ func toggle_debug_panel() -> void:
 func update_debug_vitals(text: String) -> void:
 	if _debug_label and _debug_panel and _debug_panel.visible:
 		_debug_label.text = text
+
+
+func show_death_banner(cause_label: String) -> void:
+	if _death_panel == null:
+		return
+	_death_title.text = "YOU DIED"
+	_death_cause.text = cause_label if not cause_label.is_empty() else ""
+	_death_cause.visible = not cause_label.is_empty()
+	_death_panel.visible = true
+
+
+func hide_death_banner() -> void:
+	if _death_panel:
+		_death_panel.visible = false
+
+
+func show_respawn_banner() -> void:
+	if _respawn_banner == null:
+		return
+	_respawn_banner.text = "SURVIVAL TRAUMA — RECOVER YOUR EQUIPMENT"
+	_respawn_banner.modulate = Color(1.0, 0.82, 0.45, 1.0)
+	_respawn_banner.visible = true
+	_respawn_banner_ttl = 5.0
+
+
+func update_recovery_indicator(info: Dictionary) -> void:
+	if _recovery_panel == null or _recovery_label == null:
+		return
+	if not bool(info.get("active", false)):
+		_recovery_panel.visible = false
+		return
+	var dir := String(info.get("direction", "N"))
+	var dist := float(info.get("distance", 0.0))
+	_recovery_label.text = "Death Cache: %s — %.0fm" % [dir, dist]
+	_recovery_panel.visible = true
 
 
 func _build_hud_elements() -> void:
@@ -253,3 +301,78 @@ func _build_hud_elements() -> void:
 	_toast_box.alignment = BoxContainer.ALIGNMENT_END
 	_toast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_toast_box)
+
+	# Minimal center-screen death notification ("YOU DIED" + brief cause).
+	_death_panel = PanelContainer.new()
+	_death_panel.visible = false
+	_death_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_death_panel.offset_left = -220
+	_death_panel.offset_top = -64
+	_death_panel.offset_right = 220
+	_death_panel.offset_bottom = 64
+	_death_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var d_style := StyleBoxFlat.new()
+	d_style.bg_color = Color(0.08, 0.02, 0.02, 0.86)
+	d_style.border_color = Color(0.78, 0.22, 0.20, 0.90)
+	d_style.set_border_width_all(2)
+	d_style.set_corner_radius_all(8)
+	d_style.set_content_margin_all(14)
+	_death_panel.add_theme_stylebox_override("panel", d_style)
+	add_child(_death_panel)
+
+	var d_vbox := VBoxContainer.new()
+	d_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	d_vbox.add_theme_constant_override("separation", 6)
+	_death_panel.add_child(d_vbox)
+
+	_death_title = Label.new()
+	_death_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_death_title.add_theme_font_size_override("font_size", 32)
+	_death_title.modulate = Color(0.98, 0.28, 0.24)
+	_death_title.text = "YOU DIED"
+	d_vbox.add_child(_death_title)
+
+	_death_cause = Label.new()
+	_death_cause.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_death_cause.add_theme_font_size_override("font_size", 16)
+	_death_cause.modulate = Color(0.95, 0.86, 0.82)
+	d_vbox.add_child(_death_cause)
+
+	# Minimal temporary respawn banner ("SURVIVAL TRAUMA — RECOVER YOUR EQUIPMENT").
+	_respawn_banner = Label.new()
+	_respawn_banner.visible = false
+	_respawn_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_respawn_banner.offset_left = -300
+	_respawn_banner.offset_top = 86
+	_respawn_banner.offset_right = 300
+	_respawn_banner.offset_bottom = 118
+	_respawn_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_respawn_banner.add_theme_font_size_override("font_size", 18)
+	_respawn_banner.add_theme_color_override("font_outline_color", Color.BLACK)
+	_respawn_banner.add_theme_constant_override("outline_size", 4)
+	_respawn_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_respawn_banner)
+
+	# Temporary top-center recovery indicator (direction + distance to latest unrecovered death cache).
+	_recovery_panel = PanelContainer.new()
+	_recovery_panel.visible = false
+	_recovery_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_recovery_panel.offset_left = -140
+	_recovery_panel.offset_top = 18
+	_recovery_panel.offset_right = 140
+	_recovery_panel.offset_bottom = 50
+	_recovery_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var r_style := StyleBoxFlat.new()
+	r_style.bg_color = Color(0.08, 0.09, 0.12, 0.82)
+	r_style.border_color = Color(0.92, 0.72, 0.36, 0.88)
+	r_style.set_border_width_all(1)
+	r_style.set_corner_radius_all(6)
+	r_style.set_content_margin_all(6)
+	_recovery_panel.add_theme_stylebox_override("panel", r_style)
+	add_child(_recovery_panel)
+
+	_recovery_label = Label.new()
+	_recovery_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_recovery_label.add_theme_font_size_override("font_size", 14)
+	_recovery_label.modulate = Color(1.0, 0.88, 0.56)
+	_recovery_panel.add_child(_recovery_label)

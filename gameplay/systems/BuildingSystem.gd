@@ -32,6 +32,7 @@ var rotation_steps := 0
 
 var _placed: Dictionary = {} # String uid -> Dictionary
 var _campfires: Dictionary = {} # String uid -> Dictionary
+var _base_storage: Dictionary = {} # StringName item_id -> int amount
 var _body_to_uid: Dictionary = {} # int instance_id -> String uid
 var _next_uid := 1
 var _fire_flicker_t := 0.0
@@ -266,7 +267,10 @@ func serialize() -> Dictionary:
 			"pos": [fp.x, fp.y, fp.z],
 			"lit": bool(cf.get("lit", true)),
 		})
-	return { "next_uid": _next_uid, "pieces": pieces, "campfires": fires }
+	var storage_out: Dictionary = {}
+	for k in _base_storage:
+		storage_out[String(k)] = int(_base_storage[k])
+	return { "next_uid": _next_uid, "pieces": pieces, "campfires": fires, "base_storage": storage_out }
 
 
 func deserialize(data: Dictionary) -> void:
@@ -299,6 +303,11 @@ func deserialize(data: Dictionary) -> void:
 			if not (fp_arr is Array) or fp_arr.size() < 3:
 				continue
 			_spawn_campfire(String(raw_f.get("uid", "")), Vector3(float(fp_arr[0]), float(fp_arr[1]), float(fp_arr[2])), bool(raw_f.get("lit", true)))
+	if data.has("base_storage") and data["base_storage"] is Dictionary:
+		for k in data["base_storage"]:
+			var amt := int(data["base_storage"][k])
+			if amt > 0:
+				_base_storage[StringName(String(k))] = amt
 
 
 func clear_all() -> void:
@@ -312,6 +321,7 @@ func clear_all() -> void:
 			fnode.queue_free()
 	_placed.clear()
 	_campfires.clear()
+	_base_storage.clear()
 	_body_to_uid.clear()
 	_next_uid = 1
 
@@ -436,6 +446,51 @@ func get_active_campfires() -> Array[Dictionary]:
 		if bool(cf.get("lit", true)):
 			out.append(cf)
 	return out
+
+
+## Returns all constructed campfires (lit or unlit) for respawn eligibility.
+func get_all_campfires() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for cf: Dictionary in _campfires.values():
+		out.append(cf)
+	return out
+
+
+func has_shelter_near(pos: Vector3, radius := 12.0) -> bool:
+	var r2 := radius * radius
+	for entry: Dictionary in _placed.values():
+		var p: Vector3 = entry["pos"]
+		if Vector2(p.x - pos.x, p.z - pos.z).length_squared() <= r2:
+			return true
+	return false
+
+
+func is_position_blocked_by_structure(pos: Vector3, clearance := 0.85) -> bool:
+	var c2 := clearance * clearance
+	for entry: Dictionary in _placed.values():
+		var pid: StringName = entry["piece_id"]
+		if pid == &"foundation" or pid == &"floor" or pid == &"roof":
+			continue
+		var p: Vector3 = entry["pos"]
+		if absf(p.y - pos.y) > 2.6:
+			continue
+		if Vector2(p.x - pos.x, p.z - pos.z).length_squared() < c2:
+			return true
+	for cf: Dictionary in _campfires.values():
+		var fp: Vector3 = cf["pos"]
+		if Vector2(fp.x - pos.x, fp.z - pos.z).length_squared() < 0.75 * 0.75:
+			return true
+	return false
+
+
+func store_base_item(item_id: StringName, amount: int) -> void:
+	if item_id == &"" or amount <= 0:
+		return
+	_base_storage[item_id] = int(_base_storage.get(item_id, 0)) + amount
+
+
+func get_base_storage_count(item_id: StringName) -> int:
+	return int(_base_storage.get(item_id, 0))
 
 
 func _base_hp_for_material(mat_id: StringName) -> float:
