@@ -6,6 +6,7 @@ extends Node
 const SAMPLE_RATE := 22050
 
 var _players: Array[AudioStreamPlayer] = []
+var _spatial_players: Array[AudioStreamPlayer3D] = []
 var _streams: Dictionary = {}
 
 
@@ -13,8 +14,17 @@ func _ready() -> void:
 	for i in 4:
 		var p := AudioStreamPlayer.new()
 		p.volume_db = -8.0
+		p.bus = "Effects"
 		add_child(p)
 		_players.append(p)
+	for i in 6:
+		var sp := AudioStreamPlayer3D.new()
+		sp.bus = "Effects"
+		sp.unit_size = 10.0
+		sp.max_distance = 55.0
+		sp.volume_db = -4.0
+		add_child(sp)
+		_spatial_players.append(sp)
 	_build_streams()
 
 
@@ -33,6 +43,23 @@ func play(cue: StringName) -> void:
 	_players[0].play()
 
 
+func play_spatial(cue: StringName, world_pos: Vector3) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var stream := _streams.get(cue, null) as AudioStreamWAV
+	if stream == null:
+		return
+	for sp in _spatial_players:
+		if not sp.playing:
+			sp.global_position = world_pos
+			sp.stream = stream
+			sp.play()
+			return
+	_spatial_players[0].global_position = world_pos
+	_spatial_players[0].stream = stream
+	_spatial_players[0].play()
+
+
 func _build_streams() -> void:
 	_streams[&"gather"] = _make_tone(190.0, 120.0, 0.11, 0.35, true)
 	_streams[&"sparkle"] = _make_chime([880.0, 1174.66, 1567.98], 0.24)
@@ -41,6 +68,10 @@ func _build_streams() -> void:
 	_streams[&"remove"] = _make_tone(240.0, 110.0, 0.12, 0.35, false)
 	_streams[&"door"] = _make_tone(130.0, 180.0, 0.14, 0.30, false)
 	_streams[&"error"] = _make_tone(140.0, 110.0, 0.14, 0.28, false)
+	_streams[&"pig_grunt"] = _make_tone(105.0, 72.0, 0.22, 0.42, true)
+	_streams[&"scratch"] = _make_tone(420.0, 260.0, 0.28, 0.32, true)
+	_streams[&"wall_impact"] = _make_tone(95.0, 52.0, 0.18, 0.50, true)
+	_streams[&"shark_splash"] = _make_tone(210.0, 85.0, 0.30, 0.45, true)
 
 
 func _make_tone(f0: float, f1: float, duration: float, amp: float, noise_mix: bool) -> AudioStreamWAV:

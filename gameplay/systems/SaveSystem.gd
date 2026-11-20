@@ -18,7 +18,7 @@ func has_save() -> bool:
 	return FileAccess.file_exists(save_path)
 
 
-func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null) -> Dictionary:
+func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> Dictionary:
 	if player == null or inventory == null or resources == null or collectibles == null or buildings == null:
 		return { "ok": false, "reason": "Missing system reference" }
 
@@ -44,6 +44,8 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 		payload["vitals"] = vitals.serialize()
 	if water_system:
 		payload["rain_collectors"] = water_system.serialize()
+	if day_night:
+		payload["day_night"] = day_night.serialize()
 
 	var json_str := JSON.stringify(payload, "\t")
 	var tmp_path := save_path + ".tmp"
@@ -65,7 +67,7 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "path": save_path }
 
 
-func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null) -> Dictionary:
+func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> Dictionary:
 	if not FileAccess.file_exists(save_path):
 		return { "ok": false, "reason": "No save file found" }
 	var file := FileAccess.open(save_path, FileAccess.READ)
@@ -96,13 +98,15 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 		vitals.deserialize(data["vitals"])
 	if water_system and data.has("rain_collectors") and data["rain_collectors"] is Dictionary:
 		water_system.deserialize(data["rain_collectors"])
+	if day_night and data.has("day_night") and data["day_night"] is Dictionary:
+		day_night.deserialize(data["day_night"])
 	if data.has("player") and data["player"] is Dictionary:
 		_apply_player_state(player, data["player"])
 
 	return { "ok": true, "version": version }
 
 
-func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null) -> void:
+func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null) -> void:
 	if inventory:
 		inventory.clear()
 	if resources:
@@ -115,6 +119,8 @@ func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGat
 		vitals.reset_all()
 	if water_system:
 		water_system.clear_all()
+	if day_night:
+		day_night.reset_all()
 	if player:
 		player.global_position = _spawn_position
 		if player is CharacterBody3D:

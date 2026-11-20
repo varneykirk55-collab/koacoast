@@ -33,6 +33,9 @@ const KEY_BINDINGS := {
 	"debug_toggle_vitals": [KEY_F4],
 	"debug_toggle_rain": [KEY_F3],
 	"debug_drain_vitals": [KEY_F2],
+	"debug_advance_time": [KEY_F10],
+	"debug_toggle_day_night": [KEY_F11],
+	"debug_trigger_shelter_threat": [KEY_F12],
 }
 
 const MOUSE_BINDINGS := {

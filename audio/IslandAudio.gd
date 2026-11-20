@@ -24,6 +24,7 @@ var bird: AudioStreamPlayer3D
 var surf: AudioStreamPlayer3D
 var shore_distance := INF
 var jungle := 0.0
+var night_factor := 0.0
 var wildlife_time := 3.5
 var survey_time := 0.0
 var mix_channel := {"Ambient": 0.78, "Effects": 0.86}
@@ -60,6 +61,10 @@ func _setup() -> void:
 	footsteps.name = "KekoaFootsteps"
 	add_child(footsteps)
 	_build_settings()
+
+
+func set_night_factor(factor: float) -> void:
+	night_factor = clampf(factor, 0.0, 1.0)
 
 
 func stop_audio() -> void:
@@ -155,7 +160,11 @@ func _process(delta: float) -> void:
 		_select_water(p)
 	var ease := 1.0 - exp(-delta * 2.8)
 	for kind: String in bed:
-		_fade(bed[kind], gains.get(kind, 0.0), -20.0 if kind != "insects" else -29.0, ease)
+		var nominal := -20.0 if kind != "insects" else lerpf(-29.0, -21.0, night_factor)
+		var w: float = gains.get(kind, 0.0)
+		if kind == "insects" and night_factor > 0.01:
+			w = clampf(maxf(w, 0.35 * night_factor) * lerpf(1.0, 1.45, night_factor), 0.0, 1.25)
+		_fade(bed[kind], w, nominal, ease)
 	_fade(surf, gains.get("surf", 0.0), -13.0, ease)
 	_update_voices(ease)
 	wildlife_time -= delta
@@ -243,6 +252,17 @@ func _fade(track: Node, weight: float, nominal: float, ease: float) -> void:
 
 
 func _call_bird(p: Vector3) -> void:
+	if night_factor > 0.65:
+		# At night, daytime birds quiet down and occasional distant wildlife rustles in foliage.
+		var angle := rng.randf_range(0.0, TAU)
+		var radius := rng.randf_range(18.0, 38.0)
+		bird.global_position = p + Vector3(sin(angle) * radius, 1.0, cos(angle) * radius)
+		bird.stream = sound("brush_1" if rng.randf() > 0.5 else "undergrowth_1")
+		bird.pitch_scale = rng.randf_range(0.75, 0.95)
+		bird.volume_db = -22.0
+		bird.play()
+		wildlife_time = rng.randf_range(12.0, 28.0)
+		return
 	var coastal := shore_distance < 76.0 and p.y < 24.0
 	var kind := "seabird" if coastal else ("forest_bird" if jungle > 0.38 and rng.randf() > 0.24 else "distant_bird")
 	var angle := rng.randf_range(0.0, TAU)
@@ -250,9 +270,9 @@ func _call_bird(p: Vector3) -> void:
 	bird.global_position = p + Vector3(sin(angle) * radius, rng.randf_range(3.0, 12.0), cos(angle) * radius)
 	bird.stream = sound(kind)
 	bird.pitch_scale = rng.randf_range(0.85, 1.14)
-	bird.volume_db = -16.0 if kind != "distant_bird" else -21.0
+	bird.volume_db = (-16.0 if kind != "distant_bird" else -21.0) - night_factor * 12.0
 	bird.play()
-	wildlife_time = rng.randf_range(5.0, 18.0) if jungle > 0.38 or coastal else rng.randf_range(21.0, 42.0)
+	wildlife_time = (rng.randf_range(5.0, 18.0) if jungle > 0.38 or coastal else rng.randf_range(21.0, 42.0)) * lerpf(1.0, 2.2, night_factor)
 
 
 func water_depth(p: Vector3) -> float:
