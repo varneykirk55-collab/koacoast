@@ -17,6 +17,7 @@ var water_system: WaterSystem
 var day_night: DayNightSystem
 var wildlife: WildlifeSystem
 var death_recovery: DeathRecoverySystem
+var weather: TropicalWeather
 var save_system: SaveSystem
 var audio: AudioFeedback
 var hud: SurvivalHUD
@@ -92,6 +93,11 @@ func _ready() -> void:
 	add_child(death_recovery)
 	death_recovery.setup(_terrain, _player, inventory, buildings, vitals, day_night, wildlife)
 
+	weather = TropicalWeather.new()
+	weather.name = "TropicalWeather"
+	add_child(weather)
+	weather.setup(_terrain, _player, buildings, vitals, day_night, get_node("../IslandAudio"))
+	water_system.buildings = buildings
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -158,7 +164,7 @@ func _process(_delta: float) -> void:
 			dbg += "\n" + day_night.get_clock_string()
 		if wildlife:
 			dbg += "\n" + wildlife.get_debug_summary()
-		hud.update_debug_vitals(dbg)
+		hud.update_debug_vitals(dbg + "\n" + weather.debug_summary())
 
 	if modal_open or dying:
 		_current_target.clear()
@@ -189,10 +195,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		hud.toggle_debug_panel()
 		get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("debug_toggle_rain"):
-		var next_rain := 0.0 if vitals.rain_intensity > 0.1 else 1.0
-		vitals.rain_intensity = next_rain
-		hud.push_toast("Debug Rain: %s" % ("ON (100%)" if next_rain > 0.5 else "OFF"), Color(0.65, 0.88, 1.0))
+	if event.is_action_pressed("debug_toggle_rain") or event.is_action_pressed("debug_weather_cycle") or event.is_action_pressed("debug_storm"):
+		var next := (weather.state + 1) % TropicalWeather.LABELS.size()
+		if event.is_action_pressed("debug_toggle_rain"):
+			next = TropicalWeather.State.CLEAR if weather.state >= TropicalWeather.State.LIGHT_RAIN else TropicalWeather.State.HEAVY_RAIN
+		elif event.is_action_pressed("debug_storm"):
+			next = TropicalWeather.State.TROPICAL_STORM
+		weather.request_state(next)
+		hud.push_toast("Forecast: " + TropicalWeather.LABELS[next], Color(.65,.88,1))
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("debug_drain_vitals"):
@@ -500,7 +510,7 @@ func use_inventory_slot(slot_idx: int) -> Dictionary:
 
 
 func perform_save() -> Dictionary:
-	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery)
+	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Progress Saved!", Color(0.65, 0.95, 0.78))
@@ -512,7 +522,7 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
-	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery)
+	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Saved Game Loaded!", Color(0.70, 0.92, 1.0))
@@ -526,7 +536,7 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
-	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery)
+	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery, weather)
 	if wildlife:
 		wildlife.reset_all()
 	hud.hide_death_banner()
@@ -585,6 +595,7 @@ func _on_death_started(_cause: StringName, cause_label: String, _cache_uid: Stri
 
 
 func _on_player_respawned(_respawn_info: Dictionary, _latest_cache_uid: String) -> void:
+	weather.reset_exposure()
 	hud.hide_death_banner()
 	hud.show_respawn_banner()
 	audio.play(&"craft")

@@ -31,6 +31,8 @@ const KEY_BINDINGS := {
 	"quick_save": [KEY_F5],
 	"quick_load": [KEY_F7],
 	"debug_toggle_vitals": [KEY_F4],
+	"debug_weather_cycle": [KEY_J],
+	"debug_storm": [KEY_K],
 	"debug_toggle_rain": [KEY_F3],
 	"debug_drain_vitals": [KEY_F2],
 	"debug_advance_time": [KEY_F10],

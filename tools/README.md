@@ -94,3 +94,20 @@ geometry. Use fixed in-game cameras to review shader appearance and transitions.
 ```sh
 godot --headless --path . --script res://tools/verify_freshwater.gd
 ```
+
+## Tropical weather
+
+Weather starts clear. The five forecast weights are 40/31/18/9/2 and transitions
+take 24 seconds. Tune weights, durations and transition time on TropicalWeather.
+F3 requests heavy rain or clearing, J cycles forecasts, K requests a tropical
+storm and F4 shows current rain, wind, wetness, exposure and flood depth.
+
+Four 24 m flood footprints are centered at world X/Z (460, -424), (-262, -604),
+(-480, -196) and (182, 232). Each fills from its local floor to a maximum of
+1.25 m. Standing water soaks the player and can extinguish fires or damage low
+structures. Roofs stop rain, walls reduce wind, and active fires speed recovery.
+Move upslope before rising water reaches a camp. Descending from exposed peaks
+and finding cover reduces cold stress.
+
+Run the integrated weather regression in the island scene with Godot 4.7:
+`godot --headless --fixed-fps 60 --path . -s tools/test_tropical_weather.gd`.

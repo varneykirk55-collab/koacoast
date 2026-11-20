@@ -266,6 +266,7 @@ func serialize() -> Dictionary:
 			"uid": String(cf["uid"]),
 			"pos": [fp.x, fp.y, fp.z],
 			"lit": bool(cf.get("lit", true)),
+			"drench": float(cf.get("drench", 0)),
 		})
 	var storage_out: Dictionary = {}
 	for k in _base_storage:
@@ -303,6 +304,8 @@ func deserialize(data: Dictionary) -> void:
 			if not (fp_arr is Array) or fp_arr.size() < 3:
 				continue
 			_spawn_campfire(String(raw_f.get("uid", "")), Vector3(float(fp_arr[0]), float(fp_arr[1]), float(fp_arr[2])), bool(raw_f.get("lit", true)))
+			if _campfires.has(String(raw_f.get("uid", ""))):
+				_campfires[String(raw_f.uid)]["drench"] = clampf(float(raw_f.get("drench", 0)), 0, 55)
 	if data.has("base_storage") and data["base_storage"] is Dictionary:
 		for k in data["base_storage"]:
 			var amt := int(data["base_storage"][k])
@@ -958,3 +961,38 @@ func _build_preview_materials() -> void:
 	_preview_invalid_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_preview_invalid_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_preview_invalid_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+## Coverage at feet level, accounting for roof orientation and the height of each storey.
+func weather_cover(point: Vector3) -> Vector2:
+	var roof := false
+	var barriers := {}
+	for entry: Dictionary in _placed.values():
+		var offset: Vector3 = point - entry.pos
+		var local := offset.rotated(Vector3.UP, -float(entry.rot_y))
+		match String(entry.piece_id):
+			"roof", "floor", "foundation":
+				if local.y < -.15 and local.y >= -10 and maxf(absf(local.x),absf(local.z)) <= HALF:
+					roof = true
+			"wall", "doorway":
+				if local.y < -.3 or local.y > WALL_H or absf(local.x) > HALF+.2 or absf(local.z) > CELL:
+					continue
+				if entry.piece_id == &"doorway" and entry.door_open:
+					continue
+				var side := posmod(roundi(atan2(offset.x,offset.z) / (PI*.5)),4)
+				barriers[side] = maxf(barriers.get(side,0.0), .24 if entry.reinforced else .17)
+	var windbreak := .12 if roof else 0.0
+	for strength: float in barriers.values():
+		windbreak += strength
+	return Vector2(float(roof), minf(.98,windbreak))
+
+func rain_masks(point: Vector3) -> PackedVector4Array:
+	var masks := PackedVector4Array()
+	for entry: Dictionary in _placed.values():
+		if entry.piece_id not in [&"roof",&"floor",&"foundation"]:
+			continue
+		var p: Vector3 = entry.pos
+		if absf(point.x-p.x) < 18 and absf(point.z-p.z) < 18:
+			masks.append(Vector4(p.x,p.y,p.z,entry.rot_y))
+			if masks.size() == 64:
+				break
+	return masks

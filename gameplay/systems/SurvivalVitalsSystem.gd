@@ -53,6 +53,8 @@ var survival_trauma_remaining := 0.0
 ## Extensible environment hooks (populated by future weather/day-night/volcano systems).
 var daytime_heat_multiplier := 1.0
 var volcanic_ash_exposure := 0.0
+var cold_exposure := 0.0
+var wind_load := 0.0
 var rain_intensity := 0.0
 
 ## Live computed telemetry for debug readout & player controller integration.
@@ -261,7 +263,7 @@ func step_simulation(delta: float, activity_override_for_step: StringName = &"")
 
 	# Stamina drain / regen.
 	if activity == &"sprinting" and not exhausted:
-		stamina = maxf(0.0, stamina - stamina_sprint_drain * delta)
+		stamina = maxf(0.0, stamina - stamina_sprint_drain * delta * (1.0 + .14 * wind_load + .42 * smoothstep(.35,.85,cold_exposure)))
 		if stamina <= 0.0:
 			exhausted = true
 			_emit_warning_once(&"exhausted", "Exhausted! Rest to recover stamina.")
@@ -445,7 +447,8 @@ func _recompute_penalties() -> void:
 		move_speed_multiplier = 1.0
 		dehydration_damage_rate = 0.0
 
-	stamina_regen_multiplier = hunger_regen * thirst_regen * trauma_regen
+	move_speed_multiplier *= 1.0 - .22 * smoothstep(.50,.88,cold_exposure)
+	stamina_regen_multiplier = hunger_regen * thirst_regen * trauma_regen * (1.0 - .48 * smoothstep(.2,.7,cold_exposure))
 
 
 func _sync_player_modifiers() -> void:

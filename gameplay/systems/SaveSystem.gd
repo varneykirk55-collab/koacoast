@@ -18,7 +18,7 @@ func has_save() -> bool:
 	return FileAccess.file_exists(save_path)
 
 
-func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> Dictionary:
+func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> Dictionary:
 	if player == null or inventory == null or resources == null or collectibles == null or buildings == null:
 		return { "ok": false, "reason": "Missing system reference" }
 
@@ -49,7 +49,10 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	if death_recovery:
 		payload["death_recovery"] = death_recovery.serialize()
 
-	var json_str := JSON.stringify(payload, "\t")
+	if weather:
+		payload["weather"] = weather.serialize()
+
+	var json_str := JSON.stringify(payload, "\t", true, true)
 	var tmp_path := save_path + ".tmp"
 	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if file == null:
@@ -69,7 +72,7 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "path": save_path }
 
 
-func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> Dictionary:
+func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> Dictionary:
 	if not FileAccess.file_exists(save_path):
 		return { "ok": false, "reason": "No save file found" }
 	var file := FileAccess.open(save_path, FileAccess.READ)
@@ -108,10 +111,14 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 		else:
 			# Older compatible save without death_recovery section.
 			death_recovery.clear_all()
+	if weather:
+		weather.deserialize(data.get("weather", {}))
 	if data.has("player") and data["player"] is Dictionary:
 		_apply_player_state(player, data["player"])
 	# If save was captured mid-death, immediately place player safely alive at respawn without re-dropping gear.
 	if vitals and vitals.is_dead and death_recovery:
+		if weather:
+			weather.reset_exposure()
 		var info := death_recovery.resolve_respawn_location()
 		if player:
 			player.global_position = info["pos"]
@@ -120,7 +127,7 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "version": version }
 
 
-func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null) -> void:
+func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> void:
 	if inventory:
 		inventory.clear()
 	if resources:
@@ -143,6 +150,8 @@ func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGat
 			(player as CharacterBody3D).velocity = Vector3.ZERO
 		if player.has_method("_snap_to_ground"):
 			player.call("_snap_to_ground")
+	if weather:
+		weather.deserialize({})
 	if delete_save and FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
 

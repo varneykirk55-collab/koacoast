@@ -13,3 +13,7 @@ samples from third-party libraries. The generated audio is provided under
 
 Press **F7** in-game to adjust Ambient and Effects volumes. The selections
 are retained locally. Music has its own bus for future tracks.
+
+Weather adds original CC0 synthesized rain, leaf patter, roof impacts and thunder.
+These temporary cues use filtered noise and decaying transients. Thunder varies
+in position and pitch. Storm wind reuses the island's existing wind layer.

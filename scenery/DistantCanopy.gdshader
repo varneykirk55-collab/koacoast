@@ -5,10 +5,14 @@ uniform vec4 forest_green : source_color = vec4(0.090196, 0.419608, 0.227451, 1.
 uniform vec4 sunny_green : source_color = vec4(0.286275, 0.662745, 0.258824, 1.0);
 uniform float canopy_start = 205.0;
 uniform float canopy_span = 100.0;
+global uniform float storm_wind;
 varying float fade;
 varying float leaf_height;
 
 void vertex() {
+	float gust = sin(TIME * 1.8 + dot(MODEL_MATRIX[3].xz,vec2(.06,.04)));
+	// Bend more toward the crown and keep planted vertices anchored.
+	VERTEX.x += storm_wind * (.033 + .021 * gust) * max(VERTEX.y,0.0);
 	leaf_height = VERTEX.y;
 	fade = smoothstep(canopy_start, canopy_start + canopy_span, distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD));
 }
