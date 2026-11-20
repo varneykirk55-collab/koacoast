@@ -12,6 +12,8 @@ var crafting: CraftingSystem
 var resources: ResourceGatherSystem
 var collectibles: BeachCollectibleSystem
 var buildings: BuildingSystem
+var vitals: SurvivalVitalsSystem
+var water_system: WaterSystem
 var save_system: SaveSystem
 var audio: AudioFeedback
 var hud: SurvivalHUD
@@ -57,6 +59,16 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(_terrain, inventory, database, _player)
 
+	vitals = SurvivalVitalsSystem.new()
+	vitals.name = "SurvivalVitalsSystem"
+	add_child(vitals)
+	vitals.setup(_player as CharacterBody3D)
+
+	water_system = WaterSystem.new()
+	water_system.name = "WaterSystem"
+	add_child(water_system)
+	water_system.setup(_terrain, vitals, inventory, resources)
+
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -74,8 +86,10 @@ func _ready() -> void:
 
 func _connect_signals() -> void:
 	inventory.inventory_full.connect(_on_inventory_full)
+	vitals.critical_warning.connect(_on_critical_warning)
 	hud.inv_panel.close_requested.connect(_close_all_modals)
 	hud.inv_panel.craft_requested.connect(_on_craft_requested)
+	hud.inv_panel.use_slot_requested.connect(use_inventory_slot)
 	hud.map_overlay.close_requested.connect(_close_all_modals)
 	hud.system_menu.resume_requested.connect(_close_all_modals)
 	hud.system_menu.save_requested.connect(perform_save)
@@ -102,6 +116,8 @@ func _process(_delta: float) -> void:
 	var facing := _get_player_facing()
 	if _map_initialized:
 		hud.update_navigation(_player.global_position, facing, buildings.get_base_markers())
+	if vitals:
+		hud.update_debug_vitals(vitals.get_debug_summary())
 
 	if modal_open:
 		_current_target.clear()
@@ -124,6 +140,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("quick_load"):
 		perform_load()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_toggle_vitals"):
+		hud.toggle_debug_panel()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_toggle_rain"):
+		var next_rain := 0.0 if vitals.rain_intensity > 0.1 else 1.0
+		vitals.rain_intensity = next_rain
+		hud.push_toast("Debug Rain: %s" % ("ON (100%)" if next_rain > 0.5 else "OFF"), Color(0.65, 0.88, 1.0))
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_drain_vitals"):
+		vitals.hunger = maxf(0.0, vitals.hunger - 25.0)
+		vitals.thirst = maxf(0.0, vitals.thirst - 25.0)
+		vitals.step_simulation(0.01)
+		hud.push_toast("Debug Drain: Hunger %.0f%% | Thirst %.0f%%" % [vitals.hunger, vitals.thirst], Color(1.0, 0.78, 0.42))
 		get_viewport().set_input_as_handled()
 		return
 
@@ -266,6 +299,8 @@ func perform_interact() -> Dictionary:
 			var res := resources.harvest(_current_target["data"])
 			if res["ok"]:
 				audio.play(&"gather")
+				if vitals and res.has("kind"):
+					vitals.register_harvest_activity(res["kind"])
 				for drop: Dictionary in res["drops"]:
 					var item_def := database.get_item(drop["item_id"])
 					var nm := item_def.display_name if item_def else String(drop["item_id"])
@@ -273,11 +308,94 @@ func perform_interact() -> Dictionary:
 			elif res.get("reason") == "inventory_full":
 				audio.play(&"error")
 			return res
+		"rain_collector":
+			var col_data: Dictionary = _current_target["data"]
+			var uid := String(col_data["uid"])
+			var slot_idx := inventory.find_container_slot(true, false)
+			if slot_idx >= 0 and float(col_data.get("stored_water", 0.0)) > 0.1:
+				var tr := water_system.transfer_to_container(uid)
+				if tr["ok"]:
+					audio.play(&"sparkle")
+					hud.push_toast("Filled Container (+%.0f mL %s)" % [float(tr["transferred"]), WaterQuality.get_label(int(tr["quality"]))], Color(0.55, 0.90, 1.0))
+				else:
+					audio.play(&"error")
+					hud.push_toast(String(tr.get("reason", "Cannot fill")), Color(0.98, 0.55, 0.45))
+				return tr
+			var dr := water_system.drink_from_collector(uid)
+			if dr.get("ok", false):
+				audio.play(&"sparkle" if bool(dr.get("safe", false)) else &"error")
+				hud.push_toast(String(dr.get("message", "Drank water")), Color(0.55, 0.92, 1.0) if bool(dr.get("safe", false)) else Color(1.0, 0.42, 0.35))
+			else:
+				audio.play(&"error")
+				hud.push_toast(String(dr.get("reason", "Rain collector is empty")), Color(0.95, 0.72, 0.45))
+			return dr
+		"water_source":
+			var src: Dictionary = _current_target["data"]
+			var quality := int(src["quality"])
+			var slot_idx := inventory.find_container_slot(true, false)
+			if slot_idx >= 0 and WaterQuality.is_safe(quality):
+				var added := inventory.fill_container(slot_idx, 100.0, quality)
+				if added > 0.0:
+					audio.play(&"sparkle")
+					hud.push_toast("Filled Coconut Shell (+%.0f mL %s)" % [added, WaterQuality.get_label(quality)], Color(0.55, 0.92, 1.0))
+					return { "ok": true, "filled": added, "quality": quality }
+			var eff := vitals.drink_water(32.0, quality)
+			audio.play(&"sparkle" if bool(eff["safe"]) else &"error")
+			hud.push_toast(String(eff["message"]), Color(0.55, 0.92, 1.0) if bool(eff["safe"]) else Color(1.0, 0.40, 0.35))
+			eff["ok"] = true
+			return eff
 	return { "ok": false }
 
 
+func use_inventory_slot(slot_idx: int) -> Dictionary:
+	var slot := inventory.get_slot(slot_idx)
+	if slot.is_empty():
+		return { "ok": false, "reason": "empty_slot" }
+	var item_id := StringName(slot["item_id"])
+	var def := database.get_item(item_id)
+	if def == null:
+		return { "ok": false, "reason": "unknown_item" }
+
+	if def.category == &"food":
+		if not inventory.remove_item(item_id, 1):
+			return { "ok": false, "reason": "remove_failed" }
+		var res := vitals.eat_food(def.hunger_restore, def.thirst_restore)
+		audio.play(&"gather")
+		hud.push_toast("Ate %s (+%.0f Hunger)" % [def.display_name, float(res["hunger_restored"])], Color(0.75, 0.96, 0.65))
+		res["ok"] = true
+		return res
+
+	if def.water_capacity > 0.0:
+		var drained := inventory.drain_container(slot_idx, 50.0)
+		var vol := float(drained["drained"])
+		if vol <= 0.01:
+			audio.play(&"error")
+			hud.push_toast("%s is empty." % def.display_name, Color(0.96, 0.72, 0.42))
+			return { "ok": false, "reason": "empty_container" }
+		var eff := vitals.drink_water(vol, int(drained["quality"]))
+		audio.play(&"sparkle" if bool(eff["safe"]) else &"error")
+		hud.push_toast(String(eff["message"]), Color(0.55, 0.92, 1.0) if bool(eff["safe"]) else Color(1.0, 0.42, 0.35))
+		eff["ok"] = true
+		return eff
+
+	if item_id == &"rain_tarp":
+		var place_pos := _player.global_position + _get_player_facing() * 2.6
+		var res := water_system.place_rain_collector(place_pos, 0.0, true)
+		if res["ok"]:
+			audio.play(&"build")
+			_close_all_modals()
+			var anchor_txt := " (anchored between trees)" if bool(res.get("anchored_to_trees", false)) else " (anchored on poles)"
+			hud.push_toast("Placed Rainwater Collection Tarp" + anchor_txt, Color(0.68, 0.95, 0.78))
+		else:
+			audio.play(&"error")
+			hud.push_toast(String(res.get("reason", "Cannot place rain tarp here")), Color(0.98, 0.45, 0.45))
+		return res
+
+	return { "ok": false, "reason": "not_usable" }
+
+
 func perform_save() -> Dictionary:
-	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings)
+	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Progress Saved!", Color(0.65, 0.95, 0.78))
@@ -289,7 +407,7 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
-	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings)
+	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Saved Game Loaded!", Color(0.70, 0.92, 1.0))
@@ -303,7 +421,7 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
-	save_system.new_game(_player, inventory, resources, collectibles, buildings, false)
+	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system)
 	_close_all_modals()
 	hud.push_toast("Started New Game", Color(0.96, 0.92, 0.72))
 
@@ -325,6 +443,11 @@ func _on_craft_requested(recipe_id: StringName) -> void:
 
 func _on_inventory_full(_item_id: StringName) -> void:
 	hud.push_toast("Inventory full! Free up space to gather more.", Color(1.0, 0.52, 0.38))
+
+
+func _on_critical_warning(_category: StringName, message: String) -> void:
+	audio.play(&"error")
+	hud.push_toast(message, Color(1.0, 0.42, 0.32))
 
 
 func _on_build_mode_changed(active: bool) -> void:
@@ -357,6 +480,7 @@ func _update_interaction_target(facing: Vector3) -> void:
 	var p := _player.global_position
 	var col_spot := collectibles.find_nearest_collectible(p)
 	var door_entry := buildings.find_nearest_door(p)
+	var rain_col := water_system.find_nearest_collector(p)
 	var res_node := resources.find_nearest_target(p, facing)
 
 	var best_type := ""
@@ -375,12 +499,24 @@ func _update_interaction_target(facing: Vector3) -> void:
 			best_dist = d
 			best_type = "door"
 			best_data = door_entry
+	if not rain_col.is_empty():
+		var d := (rain_col["pos"] as Vector3).distance_to(p)
+		if d < best_dist:
+			best_dist = d
+			best_type = "rain_collector"
+			best_data = rain_col
 	if not res_node.is_empty() and not buildings.build_mode:
 		var d := (res_node["pos"] as Vector3).distance_to(p)
 		if d < best_dist:
 			best_dist = d
 			best_type = "resource"
 			best_data = res_node
+
+	if best_type == "" and not buildings.build_mode:
+		var water_src := water_system.detect_water_source(p)
+		if not water_src.is_empty():
+			best_type = "water_source"
+			best_data = water_src
 
 	if best_type == "":
 		_current_target.clear()
@@ -394,6 +530,22 @@ func _update_interaction_target(facing: Vector3) -> void:
 		"door":
 			var is_open := bool(best_data.get("door_open", false))
 			hud.set_interaction_prompt("Close Door" if is_open else "Open Door")
+		"rain_collector":
+			var stored := float(best_data.get("stored_water", 0.0))
+			if stored <= 0.1:
+				hud.set_interaction_prompt("Rain Tarp (Empty — wait for rain)")
+			elif inventory.find_container_slot(true, false) >= 0:
+				hud.set_interaction_prompt("Fill Shell from Rain Tarp (%.0f mL)" % stored)
+			else:
+				hud.set_interaction_prompt("Drink Rainwater (%.0f mL)" % stored)
+		"water_source":
+			var q := int(best_data["quality"])
+			if not WaterQuality.is_safe(q):
+				hud.set_interaction_prompt("Drink %s (Unsafe!)" % String(best_data["label"]))
+			elif inventory.find_container_slot(true, false) >= 0:
+				hud.set_interaction_prompt("Fill Coconut Shell (%s)" % String(best_data["label"]))
+			else:
+				hud.set_interaction_prompt("Drink %s" % String(best_data["label"]))
 		"resource":
 			hud.set_interaction_prompt(resources.get_prompt_for_target(best_data))
 

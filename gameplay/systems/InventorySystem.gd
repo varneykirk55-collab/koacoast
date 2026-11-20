@@ -141,7 +141,11 @@ func add_item(item_id: StringName, amount: int) -> int:
 			break
 		if slots[i].is_empty():
 			var put := mini(max_stack, remaining)
-			slots[i] = { "item_id": item_id, "amount": put }
+			var entry := { "item_id": item_id, "amount": put }
+			if def.water_capacity > 0.0:
+				entry["water_amount"] = 0.0
+				entry["water_quality"] = WaterQuality.Quality.CLEAN_FRESHWATER
+			slots[i] = entry
 			remaining -= put
 
 	var added := amount - remaining
@@ -187,16 +191,98 @@ func swap_slots(a: int, b: int) -> void:
 	inventory_changed.emit()
 
 
+func find_container_slot(need_space := false, need_water := false) -> int:
+	if database == null:
+		return -1
+	for i in slots.size():
+		var slot := slots[i]
+		if slot.is_empty():
+			continue
+		var def := database.get_item(StringName(slot["item_id"]))
+		if def == null or def.water_capacity <= 0.0:
+			continue
+		var cur := float(slot.get("water_amount", 0.0))
+		if need_space and cur >= def.water_capacity - 0.01:
+			continue
+		if need_water and cur <= 0.01:
+			continue
+		return i
+	return -1
+
+
+func get_container_water(slot_idx: int) -> Dictionary:
+	var slot := get_slot(slot_idx)
+	if slot.is_empty() or database == null:
+		return { "amount": 0.0, "capacity": 0.0, "quality": WaterQuality.Quality.CLEAN_FRESHWATER }
+	var def := database.get_item(StringName(slot["item_id"]))
+	if def == null or def.water_capacity <= 0.0:
+		return { "amount": 0.0, "capacity": 0.0, "quality": WaterQuality.Quality.CLEAN_FRESHWATER }
+	return {
+		"amount": float(slot.get("water_amount", 0.0)),
+		"capacity": def.water_capacity,
+		"quality": int(slot.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER)),
+	}
+
+
+func fill_container(slot_idx: int, amount: float, quality: int) -> float:
+	if slot_idx < 0 or slot_idx >= slots.size() or amount <= 0.0 or database == null:
+		return 0.0
+	var slot := slots[slot_idx]
+	if slot.is_empty():
+		return 0.0
+	var def := database.get_item(StringName(slot["item_id"]))
+	if def == null or def.water_capacity <= 0.0:
+		return 0.0
+	var cur := float(slot.get("water_amount", 0.0))
+	var space := maxf(0.0, def.water_capacity - cur)
+	var added := minf(space, amount)
+	if added <= 0.0:
+		return 0.0
+	var cur_q := int(slot.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
+	if cur <= 0.01:
+		slot["water_quality"] = quality
+	elif not WaterQuality.is_safe(quality):
+		slot["water_quality"] = quality
+	elif not WaterQuality.is_safe(cur_q):
+		slot["water_quality"] = cur_q
+	slot["water_amount"] = minf(def.water_capacity, cur + added)
+	inventory_changed.emit()
+	return added
+
+
+func drain_container(slot_idx: int, amount: float) -> Dictionary:
+	if slot_idx < 0 or slot_idx >= slots.size() or amount <= 0.0:
+		return { "drained": 0.0, "quality": WaterQuality.Quality.CLEAN_FRESHWATER }
+	var slot := slots[slot_idx]
+	if slot.is_empty():
+		return { "drained": 0.0, "quality": WaterQuality.Quality.CLEAN_FRESHWATER }
+	var cur := float(slot.get("water_amount", 0.0))
+	if cur <= 0.01:
+		return { "drained": 0.0, "quality": WaterQuality.Quality.CLEAN_FRESHWATER }
+	var q := int(slot.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
+	var taken := minf(cur, amount)
+	slot["water_amount"] = maxf(0.0, cur - taken)
+	if float(slot["water_amount"]) <= 0.01:
+		slot["water_amount"] = 0.0
+		slot["water_quality"] = WaterQuality.Quality.CLEAN_FRESHWATER
+	inventory_changed.emit()
+	return { "drained": taken, "quality": q }
+
+
 func serialize() -> Dictionary:
 	var out: Array[Dictionary] = []
 	for i in slots.size():
 		var slot := slots[i]
 		if not slot.is_empty():
-			out.append({
+			var row := {
 				"slot": i,
 				"item_id": String(slot["item_id"]),
 				"amount": int(slot["amount"]),
-			})
+			}
+			if slot.has("water_amount"):
+				row["water_amount"] = snappedf(float(slot["water_amount"]), 0.1)
+				row["water_quality"] = int(slot.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
+			out.append(row)
 	return {
 		"capacity": capacity,
 		"slots": out,
@@ -219,10 +305,19 @@ func deserialize(data: Dictionary) -> void:
 		if def == null or amt <= 0:
 			continue
 		amt = mini(amt, maxi(1, def.max_stack))
+		var slot_data := { "item_id": item_id, "amount": amt }
+		if def.water_capacity > 0.0:
+			var wa := clampf(float(entry.get("water_amount", 0.0)), 0.0, def.water_capacity)
+			slot_data["water_amount"] = wa
+			slot_data["water_quality"] = int(entry.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
 		if idx >= 0 and idx < capacity and slots[idx].is_empty():
-			slots[idx] = { "item_id": item_id, "amount": amt }
+			slots[idx] = slot_data
 		else:
-			add_item(item_id, amt)
+			var free_idx := slots.find({})
+			if free_idx != -1 and def.water_capacity > 0.0:
+				slots[free_idx] = slot_data
+			else:
+				add_item(item_id, amt)
 	inventory_changed.emit()
 
 

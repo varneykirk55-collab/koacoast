@@ -20,6 +20,32 @@ const RESOURCE_PROFILES := {
 			{ "item_id": &"leaves", "min": 1, "max": 1 },
 		],
 	},
+	&"palm_tree": {
+		"label": "Coconut Palm",
+		"respawn": 120.0,
+		"tool_kind": &"wood",
+		"drops": [
+			{ "item_id": &"wood", "min": 2, "max": 2 },
+			{ "item_id": &"coconut", "min": 1, "max": 2 },
+			{ "item_id": &"leaves", "min": 1, "max": 1 },
+		],
+	},
+	&"coconut_drop": {
+		"label": "Fallen Coconut",
+		"respawn": 110.0,
+		"tool_kind": &"",
+		"drops": [
+			{ "item_id": &"coconut", "min": 1, "max": 1 },
+		],
+	},
+	&"berry_bush": {
+		"label": "Berry Bush",
+		"respawn": 150.0,
+		"tool_kind": &"",
+		"drops": [
+			{ "item_id": &"wild_berries", "min": 2, "max": 3 },
+		],
+	},
 	&"branch": {
 		"label": "Fallen Branch",
 		"respawn": 75.0,
@@ -66,8 +92,14 @@ var _elapsed_time := 0.0
 var _indexed := false
 var _rock_mesh: ArrayMesh
 var _branch_mesh: ArrayMesh
+var _bush_mesh: ArrayMesh
+var _berry_mesh: ArrayMesh
+var _coconut_mesh: ArrayMesh
 var _rock_material: StandardMaterial3D
 var _branch_material: StandardMaterial3D
+var _bush_material: StandardMaterial3D
+var _berry_material: StandardMaterial3D
+var _coconut_material: StandardMaterial3D
 
 
 func setup(terrain: Terrain3D, inventory: InventorySystem, database: GameDatabase) -> void:
@@ -189,7 +221,7 @@ func harvest(target: Dictionary) -> Dictionary:
 	_set_prop_active(node_id, false)
 	var pos: Vector3 = target["pos"]
 	resource_harvested.emit(node_id, awarded, pos)
-	return { "ok": true, "drops": awarded }
+	return { "ok": true, "kind": kind, "drops": awarded }
 
 
 func serialize() -> Dictionary:
@@ -247,8 +279,10 @@ func _index_baked_vegetation() -> void:
 		var kind: StringName = &""
 		var dedup_step := 0.0
 		match mesh_name:
-			"Broadleaf", "FanPalm":
+			"Broadleaf":
 				kind = &"tree"
+			"FanPalm":
+				kind = &"palm_tree"
 			"CoastalShrub", "Fern":
 				kind = &"tropical_plant"
 				dedup_step = 5.0
@@ -302,6 +336,11 @@ func _spawn_ground_deposits() -> void:
 		[&"rock", Vector2(36.0, 583.0)],
 		[&"rock", Vector2(64.0, 568.0)],
 		[&"branch", Vector2(40.0, 592.0)],
+		[&"berry_bush", Vector2(54.0, 558.0)],
+		[&"berry_bush", Vector2(34.0, 562.0)],
+		[&"berry_bush", Vector2(66.0, 556.0)],
+		[&"coconut_drop", Vector2(44.0, 596.0)],
+		[&"coconut_drop", Vector2(58.0, 594.0)],
 	]
 	for entry: Array in starter_offsets:
 		var xz: Vector2 = entry[1]
@@ -309,7 +348,7 @@ func _spawn_ground_deposits() -> void:
 		if is_finite(h) and h > 0.4:
 			_spawn_prop(entry[0], Vector3(xz.x, h, xz.y), rng.randf() * TAU, rng.randf_range(0.95, 1.15))
 
-	# Scatter deterministic basalt rocks and fallen branches island-wide on walkable ground.
+	# Scatter deterministic basalt rocks, fallen branches, berry bushes, and coastal coconuts.
 	var cell_step := 26.0
 	for gz in range(-28, 29):
 		for gx in range(-36, 37):
@@ -325,10 +364,15 @@ func _spawn_ground_deposits() -> void:
 			var tex: Vector3 = data.get_texture_id(probe)
 			var basalt := _surface_weight(tex, 0) + _surface_weight(tex, 4)
 			var grass := _surface_weight(tex, 2)
+			var sand := _surface_weight(tex, 3)
 			var roll := rng.randf()
-			if roll < (0.28 if basalt > 0.35 else 0.14):
+			if roll < (0.26 if basalt > 0.35 else 0.13):
 				_spawn_prop(&"rock", Vector3(wx, h, wz), rng.randf() * TAU, rng.randf_range(0.85, 1.35))
-			elif roll > (0.86 if grass > 0.25 else 0.92):
+			elif h >= 1.5 and h <= 145.0 and n.y >= 0.86 and grass > 0.35 and basalt < 0.35 and roll >= 0.72 and roll < 0.82:
+				_spawn_prop(&"berry_bush", Vector3(wx, h, wz), rng.randf() * TAU, rng.randf_range(0.9, 1.2))
+			elif h >= 0.7 and h <= 8.0 and n.y >= 0.88 and (sand > 0.25 or grass > 0.30) and roll >= 0.82 and roll < 0.86:
+				_spawn_prop(&"coconut_drop", Vector3(wx, h, wz), rng.randf() * TAU, rng.randf_range(0.9, 1.15))
+			elif roll > (0.87 if grass > 0.25 else 0.92):
 				_spawn_prop(&"branch", Vector3(wx, h, wz), rng.randf() * TAU, rng.randf_range(0.9, 1.25))
 
 
@@ -343,26 +387,48 @@ func _spawn_prop(kind: StringName, pos: Vector3, yaw: float, scale_factor: float
 	holder.rotation.y = yaw
 	holder.scale = Vector3.ONE * scale_factor
 
-	var mi := MeshInstance3D.new()
-	mi.mesh = _rock_mesh if kind == &"rock" else _branch_mesh
-	mi.material_override = _rock_material if kind == &"rock" else _branch_material
-	holder.add_child(mi)
+	if kind == &"berry_bush":
+		var bush_mi := MeshInstance3D.new()
+		bush_mi.mesh = _bush_mesh
+		bush_mi.material_override = _bush_material
+		holder.add_child(bush_mi)
 
-	var body := StaticBody3D.new()
-	body.collision_layer = 1
-	var col := CollisionShape3D.new()
-	if kind == &"rock":
-		var sphere := SphereShape3D.new()
-		sphere.radius = 0.55
-		col.shape = sphere
-		col.position = Vector3(0.0, 0.28, 0.0)
+		var fruit_mi := MeshInstance3D.new()
+		fruit_mi.name = "FruitCluster"
+		fruit_mi.mesh = _berry_mesh
+		fruit_mi.material_override = _berry_material
+		holder.add_child(fruit_mi)
+		holder.set_meta("keep_foliage_on_deplete", true)
 	else:
-		var box := BoxShape3D.new()
-		box.size = Vector3(1.5, 0.25, 0.3)
-		col.shape = box
-		col.position = Vector3(0.0, 0.12, 0.0)
-	body.add_child(col)
-	holder.add_child(body)
+		var mi := MeshInstance3D.new()
+		match kind:
+			&"rock":
+				mi.mesh = _rock_mesh
+				mi.material_override = _rock_material
+			&"coconut_drop":
+				mi.mesh = _coconut_mesh
+				mi.material_override = _coconut_material
+			_:
+				mi.mesh = _branch_mesh
+				mi.material_override = _branch_material
+		holder.add_child(mi)
+
+	if kind == &"rock" or kind == &"branch":
+		var body := StaticBody3D.new()
+		body.collision_layer = 1
+		var col := CollisionShape3D.new()
+		if kind == &"rock":
+			var sphere := SphereShape3D.new()
+			sphere.radius = 0.55
+			col.shape = sphere
+			col.position = Vector3(0.0, 0.28, 0.0)
+		else:
+			var box := BoxShape3D.new()
+			box.size = Vector3(1.5, 0.25, 0.3)
+			col.shape = box
+			col.position = Vector3(0.0, 0.12, 0.0)
+		body.add_child(col)
+		holder.add_child(body)
 	add_child(holder)
 	_prop_nodes[id] = holder
 	if is_depleted(id):
@@ -372,6 +438,11 @@ func _spawn_prop(kind: StringName, pos: Vector3, yaw: float, scale_factor: float
 func _set_prop_active(node_id: String, active: bool) -> void:
 	var holder := _prop_nodes.get(node_id, null) as Node3D
 	if holder == null:
+		return
+	if holder.get_meta("keep_foliage_on_deplete", false):
+		var fruit := holder.get_node_or_null("FruitCluster") as Node3D
+		if fruit:
+			fruit.visible = active
 		return
 	holder.visible = active
 	for child in holder.get_children():
@@ -416,8 +487,10 @@ func _score_candidate(node: Dictionary, player_pos: Vector3, forward_dir: Vector
 
 func _kind_from_undergrowth(kind_idx: int) -> StringName:
 	match kind_idx:
-		3, 4:
+		3:
 			return &"tree"
+		4:
+			return &"palm_tree"
 		1, 2:
 			return &"tropical_plant"
 		_:
@@ -470,3 +543,42 @@ func _build_prop_assets() -> void:
 	twig.radial_segments = 5
 	branch_st.append_from(twig, 0, Transform3D(Basis(Vector3.UP, 0.5) * Basis(Vector3.FORWARD, 1.05), Vector3(0.28, 0.15, 0.15)))
 	_branch_mesh = branch_st.commit()
+
+	_bush_material = StandardMaterial3D.new()
+	_bush_material.albedo_color = Color(0.16, 0.36, 0.15)
+	_bush_material.roughness = 0.90
+
+	_berry_material = StandardMaterial3D.new()
+	_berry_material.albedo_color = Color(0.84, 0.14, 0.18)
+	_berry_material.roughness = 0.45
+
+	_coconut_material = StandardMaterial3D.new()
+	_coconut_material.albedo_color = Color(0.42, 0.27, 0.14)
+	_coconut_material.roughness = 0.85
+
+	var bush_st := SurfaceTool.new()
+	bush_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var leaf_blob := SphereMesh.new()
+	leaf_blob.radial_segments = 7
+	leaf_blob.rings = 3
+	bush_st.append_from(leaf_blob, 0, Transform3D(Basis.from_scale(Vector3(0.68, 0.55, 0.68)), Vector3(0.0, 0.42, 0.0)))
+	bush_st.append_from(leaf_blob, 0, Transform3D(Basis.from_scale(Vector3(0.48, 0.42, 0.48)), Vector3(0.32, 0.34, 0.22)))
+	bush_st.append_from(leaf_blob, 0, Transform3D(Basis.from_scale(Vector3(0.45, 0.40, 0.45)), Vector3(-0.30, 0.36, -0.20)))
+	_bush_mesh = bush_st.commit()
+
+	var berry_st := SurfaceTool.new()
+	berry_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var berry_dot := SphereMesh.new()
+	berry_dot.radial_segments = 5
+	berry_dot.rings = 2
+	for bp: Vector3 in [Vector3(0.24, 0.66, 0.34), Vector3(-0.26, 0.62, 0.28), Vector3(0.38, 0.50, -0.14), Vector3(-0.18, 0.58, -0.34), Vector3(0.06, 0.78, 0.05), Vector3(-0.36, 0.48, 0.04)]:
+		berry_st.append_from(berry_dot, 0, Transform3D(Basis.from_scale(Vector3.ONE * 0.07), bp))
+	_berry_mesh = berry_st.commit()
+
+	var coco_st := SurfaceTool.new()
+	coco_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var coco_orb := SphereMesh.new()
+	coco_orb.radial_segments = 7
+	coco_orb.rings = 3
+	coco_st.append_from(coco_orb, 0, Transform3D(Basis.from_scale(Vector3(0.16, 0.14, 0.18)), Vector3(0.0, 0.12, 0.0)))
+	_coconut_mesh = coco_st.commit()

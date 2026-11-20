@@ -15,6 +15,8 @@ var _build_pieces_label: Label
 var _build_status_label: Label
 var _toast_box: VBoxContainer
 var _quick_bar: Label
+var _debug_panel: PanelContainer
+var _debug_label: Label
 var _toasts: Array[Dictionary] = []
 
 
@@ -132,6 +134,16 @@ func is_any_modal_open() -> bool:
 	return open
 
 
+func toggle_debug_panel() -> void:
+	if _debug_panel:
+		_debug_panel.visible = not _debug_panel.visible
+
+
+func update_debug_vitals(text: String) -> void:
+	if _debug_label and _debug_panel and _debug_panel.visible:
+		_debug_label.text = text
+
+
 func _build_hud_elements() -> void:
 	# Quick-key reminder positioned cleanly below Kekoa's existing HUD/Info label.
 	_quick_bar = Label.new()
@@ -142,8 +154,30 @@ func _build_hud_elements() -> void:
 	_quick_bar.add_theme_font_size_override("font_size", 13)
 	_quick_bar.add_theme_color_override("font_outline_color", Color.BLACK)
 	_quick_bar.add_theme_constant_override("outline_size", 3)
-	_quick_bar.text = "[E/X] Interact   [I/Tab/Y] Bag & Craft   [B/D-Up] Build   [M/Back] Map   [F5] Save   [Esc/Start] Menu"
+	_quick_bar.text = "[E/X] Interact   [I/Tab/Y] Bag & Craft   [B/D-Up] Build   [M/Back] Map   [F4] Vitals Debug   [F5] Save   [Esc/Start] Menu"
 	add_child(_quick_bar)
+
+	# Toggleable Survival Debug Readout (no permanent hunger/thirst bars).
+	_debug_panel = PanelContainer.new()
+	_debug_panel.visible = false
+	_debug_panel.offset_left = 12
+	_debug_panel.offset_top = 92
+	_debug_panel.offset_right = 560
+	_debug_panel.offset_bottom = 226
+	_debug_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dbg_style := StyleBoxFlat.new()
+	dbg_style.bg_color = Color(0.05, 0.08, 0.11, 0.84)
+	dbg_style.border_color = Color(0.50, 0.68, 0.72, 0.85)
+	dbg_style.set_border_width_all(1)
+	dbg_style.set_corner_radius_all(6)
+	dbg_style.set_content_margin_all(8)
+	_debug_panel.add_theme_stylebox_override("panel", dbg_style)
+	add_child(_debug_panel)
+
+	_debug_label = Label.new()
+	_debug_label.add_theme_font_size_override("font_size", 12)
+	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_panel.add_child(_debug_label)
 
 	# Upper-right circular minimap.
 	minimap = MinimapWidget.new()

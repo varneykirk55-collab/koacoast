@@ -5,6 +5,7 @@ extends PanelContainer
 
 signal close_requested
 signal craft_requested(recipe_id: StringName)
+signal use_slot_requested(slot_idx: int)
 
 const FILTER_TABS := [
 	[&"all", "All"],
@@ -27,6 +28,7 @@ var _detail_icon: TextureRect
 var _detail_name: Label
 var _detail_meta: Label
 var _detail_desc: Label
+var _use_btn: Button
 var _filter_buttons: Array[Button] = []
 var _active_filter_idx := 0
 var _recipe_list: VBoxContainer
@@ -175,6 +177,13 @@ func _ready() -> void:
 	_detail_desc.text = "Gather wood, stone, plant fibers, leaves, or beach collectibles."
 	detail_text.add_child(_detail_desc)
 
+	_use_btn = Button.new()
+	_use_btn.visible = false
+	_use_btn.focus_mode = Control.FOCUS_ALL
+	_use_btn.custom_minimum_size = Vector2(0, 30)
+	_use_btn.pressed.connect(func(): use_slot_requested.emit(_selected_slot))
+	detail_text.add_child(_use_btn)
+
 	# Right: Crafting recipe list.
 	var craft_col := VBoxContainer.new()
 	craft_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -248,8 +257,13 @@ func refresh() -> void:
 			var amt := int(slot["amount"])
 			var def := _database.get_item(item_id)
 			_slot_icons[i].texture = _database.get_item_icon(item_id)
-			_slot_counts[i].text = str(amt) if amt > 1 else ""
-			_slot_buttons[i].tooltip_text = "%s (%d)" % [def.display_name if def else String(item_id), amt]
+			if def and def.water_capacity > 0.0:
+				var w := _inventory.get_container_water(i)
+				_slot_counts[i].text = "%.0f%%" % (float(w["amount"]) / maxf(1.0, float(w["capacity"])) * 100.0)
+				_slot_buttons[i].tooltip_text = "%s (%.0f/%.0f mL %s)" % [def.display_name, float(w["amount"]), float(w["capacity"]), WaterQuality.get_label(int(w["quality"]))]
+			else:
+				_slot_counts[i].text = str(amt) if amt > 1 else ""
+				_slot_buttons[i].tooltip_text = "%s (%d)" % [def.display_name if def else String(item_id), amt]
 	_update_detail(_selected_slot)
 	_refresh_recipes()
 
@@ -384,6 +398,8 @@ func _on_recipe_inspected(rec: RecipeDef) -> void:
 	var have_out := _inventory.get_count(rec.output_item_id) if _inventory else 0
 	_detail_meta.text = "Crafts: +%d  |  Owned: %d  |  Category: %s" % [rec.output_amount, have_out, String(def.category).capitalize() if def else "Item"]
 	_detail_desc.text = def.description if def else ""
+	if _use_btn:
+		_use_btn.visible = false
 
 
 func _on_slot_selected(idx: int) -> void:
@@ -400,11 +416,32 @@ func _update_detail(idx: int) -> void:
 		_detail_name.text = "Empty Slot #%d" % (idx + 1)
 		_detail_meta.text = ""
 		_detail_desc.text = "Select an item to inspect its details."
+		if _use_btn:
+			_use_btn.visible = false
 		return
 	var item_id := StringName(slot["item_id"])
 	var amt := int(slot["amount"])
 	var def := _database.get_item(item_id)
 	_detail_icon.texture = _database.get_item_icon(item_id)
 	_detail_name.text = def.display_name if def else String(item_id)
-	_detail_meta.text = "Category: %s   |   Quantity: %d / %d" % [String(def.category).capitalize(), amt, def.max_stack] if def else ""
+	if def and def.water_capacity > 0.0:
+		var w := _inventory.get_container_water(idx)
+		_detail_meta.text = "Water: %.0f / %.0f mL  |  %s" % [float(w["amount"]), float(w["capacity"]), WaterQuality.get_label(int(w["quality"]))]
+		if _use_btn:
+			_use_btn.visible = float(w["amount"]) > 0.1
+			_use_btn.text = "Drink %s" % def.display_name
+	elif def and def.category == &"food":
+		_detail_meta.text = "Food  |  Quantity: %d / %d  |  +%.0f Hunger" % [amt, def.max_stack, def.hunger_restore]
+		if _use_btn:
+			_use_btn.visible = true
+			_use_btn.text = "Eat %s" % def.display_name
+	elif item_id == &"rain_tarp":
+		_detail_meta.text = "Survival Gear  |  Quantity: %d / %d" % [amt, def.max_stack]
+		if _use_btn:
+			_use_btn.visible = true
+			_use_btn.text = "Place Rainwater Collection Tarp"
+	else:
+		_detail_meta.text = "Category: %s   |   Quantity: %d / %d" % [String(def.category).capitalize(), amt, def.max_stack] if def else ""
+		if _use_btn:
+			_use_btn.visible = false
 	_detail_desc.text = def.description if def else ""

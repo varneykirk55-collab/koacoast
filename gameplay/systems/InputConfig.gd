@@ -30,6 +30,9 @@ const KEY_BINDINGS := {
 	"craft_tab_next": [KEY_BRACKETRIGHT],
 	"quick_save": [KEY_F5],
 	"quick_load": [KEY_F7],
+	"debug_toggle_vitals": [KEY_F4],
+	"debug_toggle_rain": [KEY_F3],
+	"debug_drain_vitals": [KEY_F2],
 }
 
 const MOUSE_BINDINGS := {

@@ -57,6 +57,12 @@ var _blend := 0.0
 var _playback: AnimationNodeStateMachinePlayback
 var gameplay_input_blocked := false
 var build_mode_active := false
+var survival_speed_scale := 1.0
+var can_sprint := true
+
+
+func is_sprinting() -> bool:
+	return _sprinting
 
 
 func _ready() -> void:
@@ -221,8 +227,8 @@ func _physics_process(delta: float) -> void:
 	dir.y = 0.0
 	dir = dir.normalized()
 
-	_sprinting = not gameplay_input_blocked and Input.is_action_pressed("sprint") and input.length() > 0.1
-	var speed := (sprint_speed if _sprinting else walk_speed) * speed_multiplier
+	_sprinting = can_sprint and not gameplay_input_blocked and Input.is_action_pressed("sprint") and input.length() > 0.1
+	var speed := (sprint_speed if _sprinting else walk_speed) * speed_multiplier * survival_speed_scale
 	var accel := acceleration if is_on_floor() else acceleration * air_control
 	var target := dir * speed
 	velocity.x = lerpf(velocity.x, target.x, clampf(accel * delta, 0.0, 1.0))

@@ -56,7 +56,7 @@ func get_recipe_category(rec: RecipeDef) -> StringName:
 		return &"other"
 	if def.category == &"tool":
 		return &"tool"
-	if def.category == &"component":
+	if def.category == &"component" or def.category == &"container" or def.category == &"survival":
 		return &"component"
 	if def.category == &"building":
 		var id_str := String(def.id)
@@ -88,6 +88,10 @@ func _register_items() -> void:
 		[&"plant_fiber", "Plant Fiber", "Tough fibrous strands from island grass. Used for bindings and spun into Fiber Rope.", &"resource", 99, Color(0.54, 0.69, 0.32), &"fiber", &"", &"", 0],
 		[&"leaves", "Leaves", "Broad tropical fronds and palm leaves. Used for thatch roofs, thatch walls, and natural shelters.", &"resource", 99, Color(0.24, 0.62, 0.28), &"leaf", &"", &"", 0],
 		[&"shark_tooth", "Shark Tooth", "Serrated tiger shark tooth found sparkling along black-sand beaches. Future material for a traditional leiomano.", &"collectible", 99, Color(0.92, 0.89, 0.80), &"tooth", &"", &"", 0],
+		[&"wild_berries", "Wild Berries", "Tart island berries gathered from valley bushes. Eat to restore +14 Hunger and +3 Thirst.", &"food", 30, Color(0.84, 0.20, 0.24), &"berries", &"", &"", 0, 14.0, 3.0, 0.0],
+		[&"coconut", "Coconut", "Fresh island coconut from coastal palms. Eat (+10 Hunger, +12 Thirst) or craft into a Hollowed Coconut Shell.", &"food", 15, Color(0.46, 0.30, 0.16), &"coconut", &"", &"", 0, 10.0, 12.0, 0.0],
+		[&"coconut_shell", "Hollowed Coconut Shell", "Primitive water container (100 mL cap). Fill at freshwater streams or rain collectors and drink to restore Thirst.", &"container", 1, Color(0.54, 0.35, 0.18), &"shell", &"", &"", 0, 0.0, 0.0, 100.0],
+		[&"rain_tarp", "Rainwater Collection Tarp", "Woven leaf tarp lashed to poles or trees. Captures rainwater during rainfall for refilling containers.", &"survival", 5, Color(0.32, 0.56, 0.30), &"tarp", &"", &"", 0],
 		[&"rope", "Fiber Rope", "Braided plant-fiber cordage. Essential binding for advanced tools, doors, and sturdy foundations.", &"component", 99, Color(0.76, 0.68, 0.42), &"rope", &"", &"", 0],
 		[&"stone_gathering_tool", "Stone Gathering Tool", "Starter lashed basalt multi-tool. +1 bonus yield on all gathered resources (Wood, Stone, Fiber, Leaves).", &"tool", 1, Color(0.62, 0.66, 0.68), &"pick", &"", &"all", 1],
 		[&"stone_axe", "Stone Axe", "Balanced basalt hatchet on a koa handle. +3 Wood and +1 Leaves from trees and fallen branches.", &"tool", 1, Color(0.74, 0.48, 0.26), &"axe", &"", &"wood", 3],
@@ -138,13 +142,19 @@ func _add_item(r: Array) -> void:
 	item.placeable_piece_id = r[7]
 	item.tool_kind = r[8]
 	item.tool_bonus = r[9]
+	if r.size() >= 13:
+		item.hunger_restore = float(r[10])
+		item.thirst_restore = float(r[11])
+		item.water_capacity = float(r[12])
 	items[item.id] = item
 
 
 func _register_recipes() -> void:
 	var rows := [
-		# Components
+		# Components & Survival Gear
 		[&"craft_rope", "Fiber Rope (x2)", &"rope", 2, &"hand", [{ "item_id": &"plant_fiber", "amount": 3 }]],
+		[&"craft_coconut_shell", "Hollowed Coconut Shell", &"coconut_shell", 1, &"hand", [{ "item_id": &"coconut", "amount": 1 }, { "item_id": &"stone", "amount": 1 }]],
+		[&"craft_rain_tarp", "Rainwater Collection Tarp", &"rain_tarp", 1, &"hand", [{ "item_id": &"leaves", "amount": 6 }, { "item_id": &"rope", "amount": 2 }, { "item_id": &"wood", "amount": 2 }]],
 		# Tool progression
 		[&"craft_stone_tool", "Stone Gathering Tool", &"stone_gathering_tool", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"stone", "amount": 2 }, { "item_id": &"plant_fiber", "amount": 2 }]],
 		[&"craft_stone_axe", "Stone Axe", &"stone_axe", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"stone", "amount": 3 }, { "item_id": &"rope", "amount": 1 }]],
@@ -287,6 +297,24 @@ func _generate_icon(def: ItemDef) -> Texture2D:
 			_draw_line(img, Vector2(12, 36), Vector2(22, 26), Color(0.48, 0.33, 0.18), 3)
 			_draw_line(img, Vector2(21, 27), Vector2(37, 11), Color(0.76, 0.80, 0.84), 4)
 			_fill_rect(img, 18, 24, 24, 30, col)
+		&"berries":
+			_fill_polygon_circle(img, Vector2(19, 28), 6.0, col)
+			_fill_polygon_circle(img, Vector2(29, 27), 6.0, dark)
+			_fill_polygon_circle(img, Vector2(24, 19), 6.0, light)
+			_fill_rect(img, 20, 10, 28, 15, Color(0.24, 0.58, 0.26))
+		&"coconut":
+			_fill_polygon_circle(img, Vector2(24, 25), 13.0, col)
+			_fill_polygon_circle(img, Vector2(20, 20), 4.0, dark)
+			_fill_polygon_circle(img, Vector2(28, 20), 3.0, dark)
+		&"shell":
+			_fill_polygon_circle(img, Vector2(24, 27), 13.0, col)
+			_fill_rect(img, 10, 12, 38, 24, Color(0.09, 0.12, 0.15, 1.0))
+			_fill_rect(img, 13, 22, 35, 26, Color(0.32, 0.72, 0.88))
+		&"tarp":
+			_draw_line(img, Vector2(10, 38), Vector2(10, 14), Color(0.55, 0.36, 0.20), 2)
+			_draw_line(img, Vector2(38, 38), Vector2(38, 14), Color(0.55, 0.36, 0.20), 2)
+			_fill_rect(img, 11, 16, 37, 26, col)
+			_fill_rect(img, 16, 20, 32, 24, Color(0.28, 0.68, 0.86))
 		&"foundation":
 			_fill_rect(img, 9, 18, 39, 27, col)
 			_fill_rect(img, 11, 27, 15, 38, dark)
