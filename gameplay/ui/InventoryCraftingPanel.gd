@@ -440,6 +440,11 @@ func _update_detail(idx: int) -> void:
 		if _use_btn:
 			_use_btn.visible = true
 			_use_btn.text = "Place Rainwater Collection Tarp"
+	elif item_id == &"campfire":
+		_detail_meta.text = "Survival Gear  |  Quantity: %d / %d" % [amt, def.max_stack]
+		if _use_btn:
+			_use_btn.visible = true
+			_use_btn.text = "Place Campfire"
 	else:
 		_detail_meta.text = "Category: %s   |   Quantity: %d / %d" % [String(def.category).capitalize(), amt, def.max_stack] if def else ""
 		if _use_btn:

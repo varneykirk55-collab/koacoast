@@ -92,6 +92,7 @@ func _register_items() -> void:
 		[&"coconut", "Coconut", "Fresh island coconut from coastal palms. Eat (+10 Hunger, +12 Thirst) or craft into a Hollowed Coconut Shell.", &"food", 15, Color(0.46, 0.30, 0.16), &"coconut", &"", &"", 0, 10.0, 12.0, 0.0],
 		[&"coconut_shell", "Hollowed Coconut Shell", "Primitive water container (100 mL cap). Fill at freshwater streams or rain collectors and drink to restore Thirst.", &"container", 1, Color(0.54, 0.35, 0.18), &"shell", &"", &"", 0, 0.0, 0.0, 100.0],
 		[&"rain_tarp", "Rainwater Collection Tarp", "Woven leaf tarp lashed to poles or trees. Captures rainwater during rainfall for refilling containers.", &"survival", 5, Color(0.32, 0.56, 0.30), &"tarp", &"", &"", 0],
+		[&"campfire", "Campfire", "Stone-ringed island fire. Provides warm light at night and deters nocturnal wild pigs from approaching camp.", &"survival", 5, Color(0.94, 0.48, 0.14), &"campfire", &"", &"", 0],
 		[&"rope", "Fiber Rope", "Braided plant-fiber cordage. Essential binding for advanced tools, doors, and sturdy foundations.", &"component", 99, Color(0.76, 0.68, 0.42), &"rope", &"", &"", 0],
 		[&"stone_gathering_tool", "Stone Gathering Tool", "Starter lashed basalt multi-tool. +1 bonus yield on all gathered resources (Wood, Stone, Fiber, Leaves).", &"tool", 1, Color(0.62, 0.66, 0.68), &"pick", &"", &"all", 1],
 		[&"stone_axe", "Stone Axe", "Balanced basalt hatchet on a koa handle. +3 Wood and +1 Leaves from trees and fallen branches.", &"tool", 1, Color(0.74, 0.48, 0.26), &"axe", &"", &"wood", 3],
@@ -155,6 +156,7 @@ func _register_recipes() -> void:
 		[&"craft_rope", "Fiber Rope (x2)", &"rope", 2, &"hand", [{ "item_id": &"plant_fiber", "amount": 3 }]],
 		[&"craft_coconut_shell", "Hollowed Coconut Shell", &"coconut_shell", 1, &"hand", [{ "item_id": &"coconut", "amount": 1 }, { "item_id": &"stone", "amount": 1 }]],
 		[&"craft_rain_tarp", "Rainwater Collection Tarp", &"rain_tarp", 1, &"hand", [{ "item_id": &"leaves", "amount": 6 }, { "item_id": &"rope", "amount": 2 }, { "item_id": &"wood", "amount": 2 }]],
+		[&"craft_campfire", "Campfire", &"campfire", 1, &"hand", [{ "item_id": &"wood", "amount": 4 }, { "item_id": &"stone", "amount": 4 }, { "item_id": &"plant_fiber", "amount": 2 }]],
 		# Tool progression
 		[&"craft_stone_tool", "Stone Gathering Tool", &"stone_gathering_tool", 1, &"hand", [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"stone", "amount": 2 }, { "item_id": &"plant_fiber", "amount": 2 }]],
 		[&"craft_stone_axe", "Stone Axe", &"stone_axe", 1, &"hand", [{ "item_id": &"wood", "amount": 3 }, { "item_id": &"stone", "amount": 3 }, { "item_id": &"rope", "amount": 1 }]],
@@ -315,6 +317,11 @@ func _generate_icon(def: ItemDef) -> Texture2D:
 			_draw_line(img, Vector2(38, 38), Vector2(38, 14), Color(0.55, 0.36, 0.20), 2)
 			_fill_rect(img, 11, 16, 37, 26, col)
 			_fill_rect(img, 16, 20, 32, 24, Color(0.28, 0.68, 0.86))
+		&"campfire":
+			_draw_line(img, Vector2(12, 36), Vector2(36, 28), Color(0.48, 0.30, 0.16), 3)
+			_draw_line(img, Vector2(12, 28), Vector2(36, 36), Color(0.48, 0.30, 0.16), 3)
+			_fill_polygon_circle(img, Vector2(24, 24), 9.0, col)
+			_fill_polygon_circle(img, Vector2(24, 21), 5.0, Color(1.0, 0.88, 0.35))
 		&"foundation":
 			_fill_rect(img, 9, 18, 39, 27, col)
 			_fill_rect(img, 11, 27, 15, 38, dark)

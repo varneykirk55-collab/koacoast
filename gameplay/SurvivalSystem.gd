@@ -14,6 +14,8 @@ var collectibles: BeachCollectibleSystem
 var buildings: BuildingSystem
 var vitals: SurvivalVitalsSystem
 var water_system: WaterSystem
+var day_night: DayNightSystem
+var wildlife: WildlifeSystem
 var save_system: SaveSystem
 var audio: AudioFeedback
 var hud: SurvivalHUD
@@ -69,6 +71,21 @@ func _ready() -> void:
 	add_child(water_system)
 	water_system.setup(_terrain, vitals, inventory, resources)
 
+	day_night = DayNightSystem.new()
+	day_night.name = "DayNightSystem"
+	add_child(day_night)
+	day_night.setup(
+		get_node_or_null("../LateMorningSun") as DirectionalLight3D,
+		get_node_or_null("../TradeWindSky") as WorldEnvironment,
+		vitals,
+		get_node_or_null("../IslandAudio")
+	)
+
+	wildlife = WildlifeSystem.new()
+	wildlife.name = "WildlifeSystem"
+	add_child(wildlife)
+	wildlife.setup(_terrain, _player, day_night, buildings, vitals, audio)
+
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -87,6 +104,10 @@ func _ready() -> void:
 func _connect_signals() -> void:
 	inventory.inventory_full.connect(_on_inventory_full)
 	vitals.critical_warning.connect(_on_critical_warning)
+	if wildlife:
+		wildlife.wildlife_warning.connect(_on_wildlife_warning)
+	if day_night:
+		day_night.phase_changed.connect(_on_phase_changed)
 	hud.inv_panel.close_requested.connect(_close_all_modals)
 	hud.inv_panel.craft_requested.connect(_on_craft_requested)
 	hud.inv_panel.use_slot_requested.connect(use_inventory_slot)
@@ -117,7 +138,12 @@ func _process(_delta: float) -> void:
 	if _map_initialized:
 		hud.update_navigation(_player.global_position, facing, buildings.get_base_markers())
 	if vitals:
-		hud.update_debug_vitals(vitals.get_debug_summary())
+		var dbg := vitals.get_debug_summary()
+		if day_night:
+			dbg += "\n" + day_night.get_clock_string()
+		if wildlife:
+			dbg += "\n" + wildlife.get_debug_summary()
+		hud.update_debug_vitals(dbg)
 
 	if modal_open:
 		_current_target.clear()
@@ -157,6 +183,25 @@ func _unhandled_input(event: InputEvent) -> void:
 		vitals.thirst = maxf(0.0, vitals.thirst - 25.0)
 		vitals.step_simulation(0.01)
 		hud.push_toast("Debug Drain: Hunger %.0f%% | Thirst %.0f%%" % [vitals.hunger, vitals.thirst], Color(1.0, 0.78, 0.42))
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_advance_time"):
+		if day_night:
+			day_night.advance_time(60.0)
+			hud.push_toast("Debug Time (+1m): %s" % day_night.get_clock_string(), Color(0.86, 0.90, 1.0))
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_toggle_day_night"):
+		if day_night:
+			day_night.toggle_day_night()
+			hud.push_toast("Debug Cycle: %s" % day_night.get_clock_string(), Color(0.82, 0.88, 1.0))
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("debug_trigger_shelter_threat"):
+		if wildlife:
+			var tr := wildlife.trigger_shelter_threat_test()
+			if not bool(tr.get("ok", false)):
+				hud.push_toast("Debug Threat: %s" % String(tr.get("reason", "Failed")), Color(0.98, 0.55, 0.45))
 		get_viewport().set_input_as_handled()
 		return
 
@@ -295,6 +340,24 @@ func perform_interact() -> Dictionary:
 				audio.play(&"door")
 				return { "ok": true, "door_open": door_data["door_open"] }
 			return { "ok": false }
+		"campfire":
+			var fire_data: Dictionary = _current_target["data"]
+			if buildings.toggle_campfire(String(fire_data["uid"])):
+				var is_lit := bool(fire_data.get("lit", true))
+				audio.play(&"craft" if is_lit else &"remove")
+				hud.push_toast("Campfire Lit" if is_lit else "Campfire Extinguished", Color(1.0, 0.80, 0.45))
+				return { "ok": true, "lit": is_lit }
+			return { "ok": false }
+		"reinforce":
+			var wall_data: Dictionary = _current_target["data"]
+			var r_res := buildings.reinforce_piece(String(wall_data["uid"]), true)
+			if bool(r_res.get("ok", false)):
+				audio.play(&"build")
+				hud.push_toast("Reinforced Shelter Wall (%.0f HP)" % float(r_res.get("max_hp", 0.0)), Color(0.76, 0.96, 0.72))
+			else:
+				audio.play(&"error")
+				hud.push_toast(String(r_res.get("reason", "Need 2 Wood + 2 Stone to reinforce")), Color(0.98, 0.55, 0.45))
+			return r_res
 		"resource":
 			var res := resources.harvest(_current_target["data"])
 			if res["ok"]:
@@ -391,11 +454,23 @@ func use_inventory_slot(slot_idx: int) -> Dictionary:
 			hud.push_toast(String(res.get("reason", "Cannot place rain tarp here")), Color(0.98, 0.45, 0.45))
 		return res
 
+	if item_id == &"campfire":
+		var place_pos := _player.global_position + _get_player_facing() * 2.4
+		var res := buildings.place_campfire(place_pos, true)
+		if res["ok"]:
+			audio.play(&"build")
+			_close_all_modals()
+			hud.push_toast("Placed & Lit Campfire", Color(1.0, 0.80, 0.44))
+		else:
+			audio.play(&"error")
+			hud.push_toast(String(res.get("reason", "Cannot place campfire here")), Color(0.98, 0.45, 0.45))
+		return res
+
 	return { "ok": false, "reason": "not_usable" }
 
 
 func perform_save() -> Dictionary:
-	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system)
+	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Progress Saved!", Color(0.65, 0.95, 0.78))
@@ -407,7 +482,7 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
-	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system)
+	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Saved Game Loaded!", Color(0.70, 0.92, 1.0))
@@ -421,7 +496,9 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
-	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system)
+	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night)
+	if wildlife:
+		wildlife.reset_all()
 	_close_all_modals()
 	hud.push_toast("Started New Game", Color(0.96, 0.92, 0.72))
 
@@ -448,6 +525,22 @@ func _on_inventory_full(_item_id: StringName) -> void:
 func _on_critical_warning(_category: StringName, message: String) -> void:
 	audio.play(&"error")
 	hud.push_toast(message, Color(1.0, 0.42, 0.32))
+
+
+func _on_wildlife_warning(category: StringName, message: String, _world_pos: Vector3) -> void:
+	var col := Color(1.0, 0.76, 0.38)
+	if category == &"shark_bite" or category == &"shelter_breach" or category == &"shark_warning":
+		col = Color(1.0, 0.38, 0.32)
+	elif category == &"campfire_deter" or category == &"shelter_held":
+		col = Color(0.68, 0.95, 0.74)
+	hud.push_toast(message, col)
+
+
+func _on_phase_changed(new_phase: StringName, day_num: int) -> void:
+	if new_phase == &"night":
+		hud.push_toast("Night falls on Day %d — wildlife grows bolder." % day_num, Color(0.68, 0.78, 1.0))
+	elif new_phase == &"sunrise" and day_num > 1:
+		hud.push_toast("Day %d — Sunrise over KoaCoast." % day_num, Color(1.0, 0.88, 0.62))
 
 
 func _on_build_mode_changed(active: bool) -> void:
@@ -480,6 +573,8 @@ func _update_interaction_target(facing: Vector3) -> void:
 	var p := _player.global_position
 	var col_spot := collectibles.find_nearest_collectible(p)
 	var door_entry := buildings.find_nearest_door(p)
+	var campfire_entry := buildings.find_nearest_campfire(p)
+	var reinforce_entry := buildings.find_nearest_reinforceable(p)
 	var rain_col := water_system.find_nearest_collector(p)
 	var res_node := resources.find_nearest_target(p, facing)
 
@@ -499,6 +594,12 @@ func _update_interaction_target(facing: Vector3) -> void:
 			best_dist = d
 			best_type = "door"
 			best_data = door_entry
+	if not campfire_entry.is_empty():
+		var d := (campfire_entry["pos"] as Vector3).distance_to(p)
+		if d < best_dist:
+			best_dist = d
+			best_type = "campfire"
+			best_data = campfire_entry
 	if not rain_col.is_empty():
 		var d := (rain_col["pos"] as Vector3).distance_to(p)
 		if d < best_dist:
@@ -511,6 +612,12 @@ func _update_interaction_target(facing: Vector3) -> void:
 			best_dist = d
 			best_type = "resource"
 			best_data = res_node
+	if not reinforce_entry.is_empty() and not buildings.build_mode:
+		var d := (reinforce_entry["pos"] as Vector3).distance_to(p)
+		if d < best_dist:
+			best_dist = d
+			best_type = "reinforce"
+			best_data = reinforce_entry
 
 	if best_type == "" and not buildings.build_mode:
 		var water_src := water_system.detect_water_source(p)
@@ -530,6 +637,13 @@ func _update_interaction_target(facing: Vector3) -> void:
 		"door":
 			var is_open := bool(best_data.get("door_open", false))
 			hud.set_interaction_prompt("Close Door" if is_open else "Open Door")
+		"campfire":
+			var is_lit := bool(best_data.get("lit", true))
+			hud.set_interaction_prompt("Extinguish Campfire" if is_lit else "Light Campfire")
+		"reinforce":
+			var hp := float(best_data.get("hp", 0.0))
+			var mhp := float(best_data.get("max_hp", 1.0))
+			hud.set_interaction_prompt("Reinforce Wall (2 Wood, 2 Stone) [%.0f/%.0f HP]" % [hp, mhp])
 		"rain_collector":
 			var stored := float(best_data.get("stored_water", 0.0))
 			if stored <= 0.1:

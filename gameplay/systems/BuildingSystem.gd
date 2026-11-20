@@ -9,6 +9,8 @@ signal selected_piece_changed(piece_id: StringName)
 signal selected_material_changed(material_id: StringName)
 signal piece_placed(uid: String, piece_id: StringName, pos: Vector3)
 signal piece_removed(uid: String, piece_id: StringName)
+signal piece_damaged(uid: String, amount: float, hp_left: float, destroyed: bool)
+signal piece_reinforced(uid: String)
 
 const CELL := BuildingPieceBuilder.CELL
 const HALF := BuildingPieceBuilder.HALF
@@ -29,8 +31,10 @@ var selected_material_id: StringName = &"wood"
 var rotation_steps := 0
 
 var _placed: Dictionary = {} # String uid -> Dictionary
+var _campfires: Dictionary = {} # String uid -> Dictionary
 var _body_to_uid: Dictionary = {} # int instance_id -> String uid
 var _next_uid := 1
+var _fire_flicker_t := 0.0
 
 var _preview_root: Node3D
 var _preview_piece_id: StringName = &""
@@ -56,6 +60,12 @@ func _process(delta: float) -> void:
 		if hinge:
 			var target_yaw := PI * 0.52 if bool(entry.get("door_open", false)) else 0.0
 			hinge.rotation.y = lerpf(hinge.rotation.y, target_yaw, clampf(10.0 * delta, 0.0, 1.0))
+
+	_fire_flicker_t += delta
+	for cf: Dictionary in _campfires.values():
+		var light := cf.get("light", null) as OmniLight3D
+		if light and bool(cf.get("lit", true)):
+			light.light_energy = 2.6 + 0.35 * sin(_fire_flicker_t * 9.5 + float(cf.get("phase", 0.0)))
 
 	if build_mode:
 		_update_preview()
@@ -244,29 +254,51 @@ func serialize() -> Dictionary:
 			"rot_y": float(entry["rot_y"]),
 			"support_uid": String(entry.get("support_uid", "")),
 			"door_open": bool(entry.get("door_open", false)),
+			"hp": snappedf(float(entry.get("hp", 100.0)), 0.1),
+			"max_hp": snappedf(float(entry.get("max_hp", 100.0)), 0.1),
+			"reinforced": bool(entry.get("reinforced", false)),
 		})
-	return { "next_uid": _next_uid, "pieces": pieces }
+	var fires: Array[Dictionary] = []
+	for cf: Dictionary in _campfires.values():
+		var fp: Vector3 = cf["pos"]
+		fires.append({
+			"uid": String(cf["uid"]),
+			"pos": [fp.x, fp.y, fp.z],
+			"lit": bool(cf.get("lit", true)),
+		})
+	return { "next_uid": _next_uid, "pieces": pieces, "campfires": fires }
 
 
 func deserialize(data: Dictionary) -> void:
 	clear_all()
 	_next_uid = maxi(1, int(data.get("next_uid", 1)))
-	if not data.has("pieces") or not (data["pieces"] is Array):
-		return
-	for raw in data["pieces"]:
-		if not (raw is Dictionary):
-			continue
-		var piece_id := StringName(String(raw.get("piece_id", "")))
-		var mat_id := StringName(String(raw.get("material_id", "wood")))
-		var pos_arr = raw.get("pos", [])
-		if not (pos_arr is Array) or pos_arr.size() < 3:
-			continue
-		var pos := Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
-		var rot_y := float(raw.get("rot_y", 0.0))
-		var support_uid := String(raw.get("support_uid", ""))
-		var uid := String(raw.get("uid", ""))
-		var door_open := bool(raw.get("door_open", false))
-		_spawn_loaded_piece(uid, piece_id, mat_id, pos, rot_y, support_uid, door_open)
+	if data.has("pieces") and data["pieces"] is Array:
+		for raw in data["pieces"]:
+			if not (raw is Dictionary):
+				continue
+			var piece_id := StringName(String(raw.get("piece_id", "")))
+			var mat_id := StringName(String(raw.get("material_id", "wood")))
+			var pos_arr = raw.get("pos", [])
+			if not (pos_arr is Array) or pos_arr.size() < 3:
+				continue
+			var pos := Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
+			var rot_y := float(raw.get("rot_y", 0.0))
+			var support_uid := String(raw.get("support_uid", ""))
+			var uid := String(raw.get("uid", ""))
+			var door_open := bool(raw.get("door_open", false))
+			var reinforced := bool(raw.get("reinforced", false))
+			var base_hp := _base_hp_for_material(mat_id) * (2.0 if reinforced else 1.0)
+			var saved_max := float(raw.get("max_hp", base_hp))
+			var saved_hp := clampf(float(raw.get("hp", saved_max)), 1.0, maxf(1.0, saved_max))
+			_spawn_loaded_piece(uid, piece_id, mat_id, pos, rot_y, support_uid, door_open, saved_hp, saved_max, reinforced)
+	if data.has("campfires") and data["campfires"] is Array:
+		for raw_f in data["campfires"]:
+			if not (raw_f is Dictionary):
+				continue
+			var fp_arr = raw_f.get("pos", [])
+			if not (fp_arr is Array) or fp_arr.size() < 3:
+				continue
+			_spawn_campfire(String(raw_f.get("uid", "")), Vector3(float(fp_arr[0]), float(fp_arr[1]), float(fp_arr[2])), bool(raw_f.get("lit", true)))
 
 
 func clear_all() -> void:
@@ -274,9 +306,226 @@ func clear_all() -> void:
 		var node := entry.get("node", null) as Node3D
 		if node:
 			node.queue_free()
+	for cf: Dictionary in _campfires.values():
+		var fnode := cf.get("node", null) as Node3D
+		if fnode:
+			fnode.queue_free()
 	_placed.clear()
+	_campfires.clear()
 	_body_to_uid.clear()
 	_next_uid = 1
+
+
+func reinforce_piece(uid: String, consume_resources := true) -> Dictionary:
+	if not _placed.has(uid):
+		return { "ok": false, "reason": "Structure not found" }
+	var entry: Dictionary = _placed[uid]
+	if bool(entry.get("reinforced", false)):
+		return { "ok": false, "reason": "Already reinforced" }
+	if consume_resources and _inventory:
+		var reqs: Array[Dictionary] = [{ "item_id": &"wood", "amount": 2 }, { "item_id": &"stone", "amount": 2 }]
+		if not _inventory.has_items(reqs):
+			return { "ok": false, "reason": "Need 2 Wood + 2 Stone to reinforce" }
+		_inventory.remove_item(&"wood", 2)
+		_inventory.remove_item(&"stone", 2)
+	entry["reinforced"] = true
+	entry["max_hp"] = _base_hp_for_material(entry["material_id"]) * 2.0
+	entry["hp"] = entry["max_hp"]
+	_attach_reinforcement_visual(entry["node"], entry["piece_id"])
+	piece_reinforced.emit(uid)
+	return { "ok": true, "uid": uid, "hp": entry["hp"] }
+
+
+func damage_piece(uid: String, raw_damage: float) -> Dictionary:
+	if not _placed.has(uid) or raw_damage <= 0.0:
+		return { "ok": false, "applied": 0.0, "destroyed": false }
+	var entry: Dictionary = _placed[uid]
+	var is_reinf := bool(entry.get("reinforced", false))
+	var mat_id: StringName = entry["material_id"]
+	var effective := raw_damage
+	if is_reinf:
+		# Reinforced structures resist nighttime wildlife scratching (minimal/no damage).
+		effective = 0.0 if raw_damage <= 15.0 else raw_damage * 0.15
+	elif mat_id == &"stone":
+		effective = raw_damage * 0.20
+	if effective <= 0.0:
+		piece_damaged.emit(uid, 0.0, float(entry["hp"]), false)
+		return { "ok": true, "applied": 0.0, "hp": float(entry["hp"]), "resisted": true, "destroyed": false }
+	entry["hp"] = maxf(0.0, float(entry["hp"]) - effective)
+	var destroyed := float(entry["hp"]) <= 0.0
+	piece_damaged.emit(uid, effective, float(entry["hp"]), destroyed)
+	if destroyed:
+		remove_piece(uid, false)
+	return { "ok": true, "applied": effective, "hp": float(entry.get("hp", 0.0)), "resisted": false, "destroyed": destroyed }
+
+
+func find_nearest_reinforceable(player_pos: Vector3) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d2 := 3.4 * 3.4
+	for entry: Dictionary in _placed.values():
+		if bool(entry.get("reinforced", false)):
+			continue
+		if not (entry["piece_id"] in [&"wall", &"doorway", &"foundation"]):
+			continue
+		var p: Vector3 = entry["pos"]
+		if absf(p.y - player_pos.y) > 2.6:
+			continue
+		var d2 := Vector2(p.x - player_pos.x, p.z - player_pos.z).length_squared()
+		if d2 < best_d2:
+			best_d2 = d2
+			best = entry
+	return best
+
+
+func get_exterior_shelter_pieces() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for entry: Dictionary in _placed.values():
+		if entry["piece_id"] in [&"wall", &"doorway", &"foundation"]:
+			out.append(entry)
+	return out
+
+
+func place_campfire(pos: Vector3, consume_item := true) -> Dictionary:
+	if _terrain == null or _terrain.data == null:
+		return { "ok": false, "reason": "Terrain unavailable" }
+	var h: float = _terrain.data.get_height(pos)
+	if not is_finite(h) or h < 0.45:
+		return { "ok": false, "reason": "Cannot place campfire underwater" }
+	if consume_item and _inventory:
+		if not _inventory.remove_item(&"campfire", 1):
+			return { "ok": false, "reason": "Need 1x Campfire" }
+	var uid := "cf_%d" % _next_uid
+	_next_uid += 1
+	var grounded := Vector3(pos.x, h, pos.z)
+	_spawn_campfire(uid, grounded, true)
+	return { "ok": true, "uid": uid, "pos": grounded }
+
+
+func find_nearest_campfire(player_pos: Vector3) -> Dictionary:
+	var best: Dictionary = {}
+	var best_d2 := 3.0 * 3.0
+	for cf: Dictionary in _campfires.values():
+		var p: Vector3 = cf["pos"]
+		if absf(p.y - player_pos.y) > 2.2:
+			continue
+		var d2 := Vector2(p.x - player_pos.x, p.z - player_pos.z).length_squared()
+		if d2 < best_d2:
+			best_d2 = d2
+			best = cf
+	return best
+
+
+func toggle_campfire(uid: String) -> bool:
+	if not _campfires.has(uid):
+		return false
+	var cf: Dictionary = _campfires[uid]
+	var next_lit := not bool(cf.get("lit", true))
+	cf["lit"] = next_lit
+	var light := cf.get("light", null) as OmniLight3D
+	var flame := cf.get("flame", null) as MeshInstance3D
+	if light:
+		light.visible = next_lit
+	if flame:
+		flame.visible = next_lit
+	return true
+
+
+func get_active_campfires() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for cf: Dictionary in _campfires.values():
+		if bool(cf.get("lit", true)):
+			out.append(cf)
+	return out
+
+
+func _base_hp_for_material(mat_id: StringName) -> float:
+	match mat_id:
+		&"thatch":
+			return 60.0
+		&"stone":
+			return 260.0
+		_:
+			return 120.0
+
+
+func _attach_reinforcement_visual(root: Node3D, piece_id: StringName) -> void:
+	if root == null or root.get_node_or_null("ReinforceBraces") != null:
+		return
+	var brace_holder := Node3D.new()
+	brace_holder.name = "ReinforceBraces"
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.24, 0.22, 0.20)
+	mat.roughness = 0.85
+	var b1 := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(CELL * 0.96, 0.16, 0.34) if piece_id != &"foundation" else Vector3(CELL + 0.08, 0.14, CELL + 0.08)
+	b1.mesh = box
+	b1.material_override = mat
+	b1.position = Vector3(0.0, 0.35 if piece_id != &"foundation" else -0.18, 0.0)
+	brace_holder.add_child(b1)
+	if piece_id == &"wall" or piece_id == &"doorway":
+		var b2 := b1.duplicate() as MeshInstance3D
+		b2.position = Vector3(0.0, 2.55, 0.0)
+		brace_holder.add_child(b2)
+	root.add_child(brace_holder)
+
+
+func _spawn_campfire(uid: String, pos: Vector3, lit: bool) -> void:
+	if uid == "" or _campfires.has(uid):
+		uid = "cf_%d" % _next_uid
+		_next_uid += 1
+	var root := Node3D.new()
+	root.name = uid
+	root.position = pos
+
+	var stone_mat := StandardMaterial3D.new()
+	stone_mat.albedo_color = Color(0.32, 0.33, 0.35)
+	var rock := SphereMesh.new()
+	rock.radius = 0.16
+	rock.height = 0.22
+	for i in 8:
+		var ang := TAU * float(i) / 8.0
+		var rmi := MeshInstance3D.new()
+		rmi.mesh = rock
+		rmi.material_override = stone_mat
+		rmi.position = Vector3(cos(ang) * 0.52, 0.09, sin(ang) * 0.52)
+		root.add_child(rmi)
+
+	var flame_mat := StandardMaterial3D.new()
+	flame_mat.albedo_color = Color(1.0, 0.58, 0.14)
+	flame_mat.emission_enabled = true
+	flame_mat.emission = Color(1.0, 0.45, 0.08)
+	flame_mat.emission_energy_multiplier = 3.0
+	var flame := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.04
+	cone.bottom_radius = 0.24
+	cone.height = 0.52
+	flame.mesh = cone
+	flame.material_override = flame_mat
+	flame.position = Vector3(0.0, 0.28, 0.0)
+	flame.visible = lit
+	root.add_child(flame)
+
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.66, 0.32)
+	light.light_energy = 2.6
+	light.omni_range = 16.0
+	light.omni_attenuation = 1.4
+	light.position = Vector3(0.0, 0.75, 0.0)
+	light.visible = lit
+	root.add_child(light)
+
+	add_child(root)
+	_campfires[uid] = {
+		"uid": uid,
+		"pos": pos,
+		"lit": lit,
+		"node": root,
+		"light": light,
+		"flame": flame,
+		"phase": float(uid.hash() % 100) * 0.1,
+	}
 
 
 func _commit_piece(piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y: float, support_uid: String, consume_item: bool) -> Dictionary:
@@ -298,7 +547,7 @@ func _commit_piece(piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y
 	return { "ok": true, "uid": uid, "piece_id": piece_id, "material_id": mat_id, "pos": pos }
 
 
-func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y: float, support_uid: String, door_open: bool) -> void:
+func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, pos: Vector3, rot_y: float, support_uid: String, door_open: bool, hp := -1.0, max_hp := -1.0, reinforced := false) -> void:
 	if _database == null:
 		return
 	var piece_def := _database.get_building_piece(piece_id)
@@ -320,6 +569,10 @@ func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, 
 	var hinge := built.get("door_hinge", null) as Node3D
 	if hinge and door_open:
 		hinge.rotation.y = PI * 0.52
+	var m_hp := max_hp if max_hp > 0.0 else _base_hp_for_material(mat_def.id) * (2.0 if reinforced else 1.0)
+	var c_hp := hp if hp > 0.0 else m_hp
+	if reinforced:
+		_attach_reinforcement_visual(node, piece_id)
 	_placed[uid] = {
 		"uid": uid,
 		"piece_id": piece_id,
@@ -328,6 +581,9 @@ func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, 
 		"rot_y": rot_y,
 		"support_uid": support_uid,
 		"door_open": door_open,
+		"hp": c_hp,
+		"max_hp": m_hp,
+		"reinforced": reinforced,
 		"node": node,
 		"door_hinge": hinge,
 	}
