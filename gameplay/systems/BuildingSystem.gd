@@ -184,6 +184,7 @@ func remove_piece(uid: String, refund := true) -> Dictionary:
 	_unregister_bodies(node)
 	node.queue_free()
 	_placed.erase(uid)
+	_base_markers_dirty = true
 
 	var refunded := false
 	if refund and _inventory and _database:
@@ -229,7 +230,12 @@ func get_placed_count() -> int:
 	return _placed.size()
 
 
+var _base_markers_dirty := true
+var _base_markers: Array[Vector3] = []
+
 func get_base_markers() -> Array[Vector3]:
+	if not _base_markers_dirty:
+		return _base_markers
 	var clusters: Array[Vector3] = []
 	for entry: Dictionary in _placed.values():
 		var p: Vector3 = entry["pos"]
@@ -240,7 +246,9 @@ func get_base_markers() -> Array[Vector3]:
 				break
 		if not merged:
 			clusters.append(p)
-	return clusters
+	_base_markers = clusters
+	_base_markers_dirty = false
+	return _base_markers
 
 
 func serialize() -> Dictionary:
@@ -323,6 +331,7 @@ func clear_all() -> void:
 		if fnode:
 			fnode.queue_free()
 	_placed.clear()
+	_base_markers_dirty = true
 	_campfires.clear()
 	_base_storage.clear()
 	_body_to_uid.clear()
@@ -631,6 +640,7 @@ func _spawn_loaded_piece(uid: String, piece_id: StringName, mat_id: StringName, 
 	var c_hp := hp if hp > 0.0 else m_hp
 	if reinforced:
 		_attach_reinforcement_visual(node, piece_id)
+	_base_markers_dirty = true
 	_placed[uid] = {
 		"uid": uid,
 		"piece_id": piece_id,
@@ -968,6 +978,8 @@ func weather_cover(point: Vector3) -> Vector2:
 	var barriers := {}
 	for entry: Dictionary in _placed.values():
 		var offset: Vector3 = point - entry.pos
+		if absf(offset.x) > 5 or absf(offset.z) > 5 or offset.y < -10 or offset.y > WALL_H:
+			continue
 		var local := offset.rotated(Vector3.UP, -float(entry.rot_y))
 		match String(entry.piece_id):
 			"roof", "floor", "foundation":

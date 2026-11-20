@@ -23,9 +23,11 @@ void vertex() {
     NORMAL.xz = r * NORMAL.xz;
     VERTEX.xz *= .86+.30*key.y;
     VERTEX.xz += (key-.5)*h*(.10+.035*h);
-    float gust = sin(TIME * 1.8 + dot(MODEL_MATRIX[3].xz,vec2(.06,.04)));
-	// Bend more toward the crown and keep planted vertices anchored.
-	VERTEX.x += storm_wind * (.033 + .021 * gust) * max(VERTEX.y,0.0);
+    if (storm_wind > 0.0) {
+		float gust = sin(TIME * 1.8 + dot(MODEL_MATRIX[3].xz,vec2(.06,.04)));
+		// Bend more toward the crown and keep planted vertices anchored.
+		VERTEX.x += storm_wind * (.033 + .021 * gust) * max(VERTEX.y,0.0);
+	}
 	leaf_normal = normalize(MODELVIEW_NORMAL_MATRIX * NORMAL);
     upper_light = .82+.18*smoothstep(.03,1.15,h);
 }

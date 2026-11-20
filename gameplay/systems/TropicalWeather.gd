@@ -194,13 +194,15 @@ func update_exposure(dt: float, depth: float, shelter: Vector2, warmth: float, n
 func _present(p: Vector3) -> void:
 	rain.visible = not roofed and climate.x > .015
 	rain.emitting = rain.visible
-	rain.amount_ratio = climate.x
-	drops.direction = Vector3(wind_direction.x * climate.y * .55,-1,wind_direction.y * climate.y * .55).normalized()
-	rain_material.set_shader_parameter("ground_y",p.y-2.5)
-	var roofs := buildings.rain_masks(p)
-	rain_material.set_shader_parameter("roof_count", roofs.size())
-	roofs.resize(64)
-	rain_material.set_shader_parameter("roofs",roofs)
+	if rain.emitting:
+		rain.amount_ratio = climate.x
+		drops.direction = Vector3(wind_direction.x * climate.y * .55,-1,wind_direction.y * climate.y * .55).normalized()
+		rain_material.set_shader_parameter("ground_y",p.y-2.5)
+		var roofs := buildings.rain_masks(p)
+		rain_material.set_shader_parameter("roof_count", roofs.size())
+		if not roofs.is_empty():
+			roofs.resize(64)
+			rain_material.set_shader_parameter("roofs",roofs)
 	RenderingServer.global_shader_parameter_set("storm_wind", smoothstep(.18,.98,climate.y))
 	island_audio.set_weather(climate.x, climate.y, roofed, state == State.TROPICAL_STORM)
 

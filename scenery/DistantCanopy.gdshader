@@ -10,9 +10,11 @@ varying float fade;
 varying float leaf_height;
 
 void vertex() {
-	float gust = sin(TIME * 1.8 + dot(MODEL_MATRIX[3].xz,vec2(.06,.04)));
-	// Bend more toward the crown and keep planted vertices anchored.
-	VERTEX.x += storm_wind * (.033 + .021 * gust) * max(VERTEX.y,0.0);
+	if (storm_wind > 0.0) {
+		float gust = sin(TIME * 1.8 + dot(MODEL_MATRIX[3].xz,vec2(.06,.04)));
+		// Bend more toward the crown and keep planted vertices anchored.
+		VERTEX.x += storm_wind * (.033 + .021 * gust) * max(VERTEX.y,0.0);
+	}
 	leaf_height = VERTEX.y;
 	fade = smoothstep(canopy_start, canopy_start + canopy_span, distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD));
 }

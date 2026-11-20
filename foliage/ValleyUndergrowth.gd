@@ -24,11 +24,13 @@ var tiles := {}
 var pending: Array[Vector2i] = []
 var center := Vector2i.MAX
 var _radius := 3
+var _visibility_anchor := Vector3.INF
 var _near_leaves: ShaderMaterial = LEAVES.duplicate()
 
 func set_quality(level: int) -> void:
 	_radius = RADII[level]
 	_near_leaves.set_shader_parameter("detail_range", float(_radius * TILE - 4))
+	_visibility_anchor = Vector3.INF
 	center = Vector2i.MAX
 
 func _process(_delta: float) -> void:
@@ -51,8 +53,14 @@ func _process(_delta: float) -> void:
 					pending.append(key)
 		pending.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 			return a.distance_squared_to(here) > b.distance_squared_to(here))
+	if pos.distance_squared_to(_visibility_anchor) > 1.0:
+		_visibility_anchor = pos
+		for tile: Node3D in tiles.values():
+			_update_tile_visibility(tile, pos)
 	if not pending.is_empty():
-		_plant_tile(pending.pop_back())
+		var key: Vector2i = pending.pop_back()
+		_plant_tile(key)
+		_update_tile_visibility(tiles[key], pos)
 
 func _distance(a: Vector2i, b: Vector2i) -> int:
 	return maxi(absi(a.x - b.x), absi(a.y - b.y))
@@ -138,6 +146,15 @@ func _plant_tile(key: Vector2i) -> void:
 		display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		tile.add_child(display)
 	tile.set_meta("harvest_samples", samples)
+
+func _update_tile_visibility(tile: Node3D, camera_pos: Vector3) -> void:
+	# Match the existing per-instance fade. A tile can be skipped only when
+	# every possible plant origin is beyond the fade, with 1 m motion margin.
+	var local := camera_pos - tile.global_position
+	var nearest := Vector2(clampf(local.x, 0, TILE), clampf(local.z, 0, TILE))
+	var range_with_margin := float(_radius * TILE - 3)
+	tile.visible = nearest.distance_squared_to(Vector2(local.x, local.z)) < range_with_margin * range_with_margin
+
 
 func _weight(tex: Vector3, id: int) -> float:
 	return (1.0 - tex.z if int(tex.x) == id else 0.0) + (tex.z if int(tex.y) == id else 0.0)

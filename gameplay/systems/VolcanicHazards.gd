@@ -67,6 +67,10 @@ func setup(survival: SurvivalSystem, ground: Terrain3D, island_audio: Node) -> v
 	add_child(visual)
 	visual.setup(vent, island_audio, game.weather.player)
 	visual.build_flow(path, ground)
+	for i in GRID_SIZE * GRID_SIZE:
+		var cell_center := Vector2(i % GRID_SIZE, floori(float(i) / GRID_SIZE)) + Vector2.ONE * .5
+		_surface_offsets.append(GRID_ORIGIN + cell_center * CELL - SUMMIT)
+	terrain.material.set_shader_param("volcanic_deposit", ash_texture)
 	deserialize({})
 
 func ground_point(point: Vector2) -> Vector3:
@@ -133,16 +137,24 @@ func step(dt: float) -> void:
 		game.water_system.expose_collectors(surface_timer, wind)
 		surface_timer = 0
 	visual.show_flow(mud_active and mud_head >= 0, mud_head, FLOW_LENGTH)
-	terrain.material.set_shader_param("volcanic_glow", intensity)
+	if intensity != _published_glow:
+		_published_glow = intensity
+		terrain.material.set_shader_param("volcanic_glow", intensity)
 	var mud_pos := path.sample_baked(clampf(mud_head - 4, 0, path.get_baked_length()))
 	visual.present(activity, intensity, airborne * (1.0 - cover.x), tremor, game.weather.wind_direction.normalized() * wind, player_pos,
 		mud_active and mud_head >= 0 and mud_head < path.get_baked_length()+FLOW_LENGTH, mud_pos)
 
 var has_deposits := false
+var _surface_offsets := PackedVector2Array()
+var _published_glow := -1.0
 
 func ash_at(point: Vector3, wind: float, rain: float) -> float:
+	if intensity <= 0:
+		return 0.0
 	var offset := Vector2(point.x, point.z) - SUMMIT
-	var direction := game.weather.wind_direction.normalized()
+	return _plume_at(offset, game.weather.wind_direction.normalized(), wind) * (1.0 - .58 * rain)
+
+func _plume_at(offset: Vector2, direction: Vector2, wind: float) -> float:
 	var along := offset.dot(direction)
 	var across := absf(offset.cross(direction))
 	var reach := lerpf(230, 1240, wind)
@@ -150,7 +162,7 @@ func ash_at(point: Vector3, wind: float, rain: float) -> float:
 	var carried := (1.0 - smoothstep(0, reach, maxf(0, along))) * (1.0 - smoothstep(width * .18, width, across))
 	carried *= 1.0 - smoothstep(0, 150, -along)
 	var local := 1.0 - smoothstep(36, lerpf(205, 135, wind), offset.length())
-	return intensity * maxf(carried, local) * (1.0 - .58 * rain)
+	return intensity * maxf(carried, local)
 
 func _cell(point: Vector3) -> int:
 	var index := Vector2i(((Vector2(point.x, point.z) - GRID_ORIGIN) / CELL).floor())
@@ -174,23 +186,27 @@ func regrowth_at(point: Vector3) -> float:
 
 func _update_surface(dt: float, wind: float, rain: float) -> void:
 	has_deposits = false
+	var direction := game.weather.wind_direction.normalized()
+	var changed := false
 	for i in ash.size():
-		var location := GRID_ORIGIN + (Vector2(i % GRID_SIZE, floori(float(i) / GRID_SIZE)) + Vector2.ONE * .5) * CELL
-		var plume := ash_at(Vector3(location.x, 0, location.y), wind, 0)
+		var plume := _plume_at(_surface_offsets[i], direction, wind) if intensity > 0 else 0.0
+		var previous := ash[i]
 		var deposit := plume * (.012 + .024 * rain)
 		var runoff := ash[i] * rain * .008
 		ash[i] = clampf(ash[i] + dt * (deposit - runoff - .0013), 0, 1)
 		contamination[i] = clampf(contamination[i] + dt * (plume * .010 + runoff * 1.7 - 1.0 / maxf(30, water_recovery_seconds)), 0, 1)
+		changed = changed or ash[i] != previous
 		if phase == Phase.RECOVERY:
 			fertility[i] = maxf(fertility[i], ash[i])
 		has_deposits = has_deposits or ash[i] > 0 or contamination[i] > 0
-	_upload_ash()
+	if changed:
+		_upload_ash()
 
 func _upload_ash() -> void:
 	for i in ash.size():
 		ash_image.set_pixel(i % GRID_SIZE, floori(float(i) / GRID_SIZE), Color(ash[i], 0, 0))
 	ash_texture.update(ash_image)
-	terrain.material.set_shader_param("volcanic_deposit", ash_texture)
+	terrain.material.set_shader_param("volcanic_has_deposit", ash.count(0.0) != ash.size())
 
 func heat_at(point: Vector3) -> float:
 	var vent_heat := 1.0 - smoothstep(28, 116, point.distance_to(vent))

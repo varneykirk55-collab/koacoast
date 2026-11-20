@@ -121,8 +121,13 @@ func step_simulation(delta: float) -> void:
 	for pig in pigs:
 		_update_pig(pig, delta, is_night, active_fires, shelter_pieces)
 
+	var player_pos := _player.global_position if _player else Vector3.ZERO
+	var swimmer_valid := false
+	if _player and player_pos.y <= 0.35:
+		var ground_height := _sample_height(player_pos)
+		swimmer_valid = is_finite(ground_height) and ground_height <= SHARK_MAX_WATER_HEIGHT
 	for shark in sharks:
-		_update_shark(shark, delta, is_night)
+		_update_shark(shark, delta, is_night, player_pos, swimmer_valid)
 
 
 func trigger_shelter_threat_test() -> Dictionary:
@@ -592,18 +597,11 @@ func _pick_pig_wander_target(home: Vector3, radius: float) -> Vector3:
 
 # --- Reef Shark AI ------------------------------------------------------------
 
-func _update_shark(shark: Dictionary, delta: float, is_night: bool) -> void:
+func _update_shark(shark: Dictionary, delta: float, is_night: bool, ppos: Vector3, swimmer_valid: bool) -> void:
 	var pos: Vector3 = shark["pos"]
 	shark["bite_cooldown"] = maxf(0.0, float(shark["bite_cooldown"]) - delta)
 
-	var swimmer_valid := false
-	var ppos := Vector3.ZERO
-	var dist_player := INF
-	if _player:
-		ppos = _player.global_position
-		dist_player = Vector2(pos.x - ppos.x, pos.z - ppos.z).length()
-		var player_ground_h := _sample_height(ppos)
-		swimmer_valid = (ppos.y <= 0.35 and is_finite(player_ground_h) and player_ground_h <= SHARK_MAX_WATER_HEIGHT)
+	var dist_player := Vector2(pos.x - ppos.x, pos.z - ppos.z).length() if swimmer_valid else INF
 
 	var detect_radius := SHARK_NIGHT_DETECT_RADIUS if is_night else SHARK_DAY_DETECT_RADIUS
 	# Moving/splashing swimmers are detected farther away.

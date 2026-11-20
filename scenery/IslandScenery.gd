@@ -2,6 +2,7 @@ extends Node3D
 ## F6 cycles the island rendering preset during play. The ocean and terrain
 ## retain their full extent at every setting.
 
+const SETTINGS_PATH := "user://koacoast_graphics.cfg"
 const PRESETS := ["Low", "Medium", "High"]
 const FADES := [Vector3(95, 170, 235), Vector3(135, 235, 320), Vector3(185, 310, 435)]
 const LEAF_MATERIAL := preload("res://foliage/materials/Foliage.tres")
@@ -32,6 +33,9 @@ func get_forest_crowns() -> Array[Vector4]:
 
 
 func _ready() -> void:
+	var settings := ConfigFile.new()
+	if settings.load(SETTINGS_PATH) == OK:
+		quality = clampi(int(settings.get_value("graphics", "quality", quality)), 0, 2)
 	_setup.call_deferred()
 
 
@@ -242,11 +246,26 @@ func apply_quality(level: int) -> void:
 	$"../IslandFreshwater".set_quality(quality)
 	_terrain.mesh_lods = 7
 	_terrain.mesh_size = [32, 48, 64][quality]
+	var sun: DirectionalLight3D = $"../LateMorningSun"
+	sun.directional_shadow_max_distance = [900.0, 1800.0, 2400.0][quality]
+	var simulation: SurvivalSystem = $"../SurvivalSystem"
+	simulation.weather.rain.amount = [384, 640, 640][quality]
+	var effects := simulation.volcano.visual
+	effects.ash.amount = [70, 115, 115][quality]
+	effects.cinders.amount = [30, 46, 46][quality]
+	simulation.set_graphics_quality(PRESETS[quality])
 	get_viewport().msaa_3d = Viewport.MSAA_2X if quality == 2 else Viewport.MSAA_DISABLED
 	print("KoaCoast graphics preset ", PRESETS[quality])
 
 
+func cycle_quality() -> void:
+	apply_quality((quality + 1) % PRESETS.size())
+	var settings := ConfigFile.new()
+	settings.set_value("graphics", "quality", quality)
+	settings.save(SETTINGS_PATH)
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F6:
-		apply_quality((quality + 1) % PRESETS.size())
+		cycle_quality()
 		get_viewport().set_input_as_handled()
