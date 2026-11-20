@@ -34,6 +34,7 @@ var _day_ambient_energy := 0.62
 var _day_fog_color := Color(0.70, 0.82, 0.88, 1.0)
 
 
+var volcanic_haze := 0.0
 var weather_cloud := 0.0
 var clear_fog_density := 0.0
 
@@ -194,7 +195,7 @@ func _apply_environment() -> void:
 		heat_factor = lerpf(0.95, 0.84, night_factor)
 
 	if _sun:
-		_sun.light_energy *= 1.0 - .27 * weather_cloud
+		_sun.light_energy *= (1.0 - .27 * weather_cloud) * (1.0 - .36 * volcanic_haze)
 	# Update WorldEnvironment sky, ambient, and fog smoothly.
 	if _sky_mat:
 		_sky_mat.set_shader_parameter("weather_cloud", weather_cloud)
@@ -205,13 +206,13 @@ func _apply_environment() -> void:
 		var twilight_amb := Color(0.78, 0.56, 0.46, 1.0)
 		var night_amb := Color(0.14, 0.20, 0.34, 1.0)
 		var amb_col := _day_ambient_color.lerp(twilight_amb, twilight_factor * 0.7).lerp(night_amb, night_factor)
-		env.fog_density = clear_fog_density * (1.0 + 2.2 * weather_cloud * weather_cloud)
+		env.fog_density = clear_fog_density * (1.0 + 2.2 * weather_cloud * weather_cloud + 27.0 * volcanic_haze * volcanic_haze)
 		env.ambient_light_color = amb_col
 		env.ambient_light_energy = lerpf(_day_ambient_energy, 0.18, night_factor)
 
 		var twilight_fog := Color(0.76, 0.52, 0.42, 1.0)
 		var night_fog := Color(0.05, 0.08, 0.14, 1.0)
-		env.fog_light_color = _day_fog_color.lerp(twilight_fog, twilight_factor * 0.75).lerp(night_fog, night_factor)
+		env.fog_light_color = _day_fog_color.lerp(twilight_fog, twilight_factor * 0.75).lerp(night_fog, night_factor).lerp(Color(.43,.39,.35), volcanic_haze * .74)
 
 	# Connect to Prompt 1 SurvivalVitalsSystem & Sol's IslandAudio.
 	if _vitals:

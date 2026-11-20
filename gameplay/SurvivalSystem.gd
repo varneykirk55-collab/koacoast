@@ -17,6 +17,7 @@ var water_system: WaterSystem
 var day_night: DayNightSystem
 var wildlife: WildlifeSystem
 var death_recovery: DeathRecoverySystem
+var volcano: VolcanicHazards
 var weather: TropicalWeather
 var save_system: SaveSystem
 var audio: AudioFeedback
@@ -98,6 +99,13 @@ func _ready() -> void:
 	add_child(weather)
 	weather.setup(_terrain, _player, buildings, vitals, day_night, get_node("../IslandAudio"))
 	water_system.buildings = buildings
+	volcano = VolcanicHazards.new()
+	volcano.name = "VolcanicHazards"
+	add_child(volcano)
+	volcano.setup(self, _terrain, get_node("../IslandAudio"))
+	water_system.volcano = volcano
+	weather.volcano = volcano
+	resources.volcano = volcano
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -164,7 +172,7 @@ func _process(_delta: float) -> void:
 			dbg += "\n" + day_night.get_clock_string()
 		if wildlife:
 			dbg += "\n" + wildlife.get_debug_summary()
-		hud.update_debug_vitals(dbg + "\n" + weather.debug_summary())
+		hud.update_debug_vitals(dbg + "\n" + weather.debug_summary() + "\n" + volcano.debug_summary())
 
 	if modal_open or dying:
 		_current_target.clear()
@@ -183,6 +191,17 @@ func _process(_delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if death_recovery and death_recovery.is_death_in_progress():
 		return
+	if OS.is_debug_build() and event is InputEventKey and event.pressed and not event.echo and event.alt_pressed:
+		match event.physical_keycode:
+			KEY_U: volcano.begin(VolcanicHazards.Phase.UNREST)
+			KEY_V: volcano.begin(VolcanicHazards.Phase.ERUPTION)
+			KEY_O: volcano.begin(VolcanicHazards.Phase.RECOVERY)
+			KEY_N: volcano.debug_mudflow()
+			KEY_BACKSPACE: volcano.deserialize({})
+			_: pass
+		if event.physical_keycode in [KEY_U, KEY_V, KEY_O, KEY_N, KEY_BACKSPACE]:
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_action_pressed("quick_save"):
 		perform_save()
 		get_viewport().set_input_as_handled()
@@ -510,7 +529,7 @@ func use_inventory_slot(slot_idx: int) -> Dictionary:
 
 
 func perform_save() -> Dictionary:
-	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather)
+	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Progress Saved!", Color(0.65, 0.95, 0.78))
@@ -522,7 +541,7 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
-	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather)
+	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Saved Game Loaded!", Color(0.70, 0.92, 1.0))
@@ -536,7 +555,7 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
-	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery, weather)
+	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if wildlife:
 		wildlife.reset_all()
 	hud.hide_death_banner()
@@ -596,6 +615,7 @@ func _on_death_started(_cause: StringName, cause_label: String, _cache_uid: Stri
 
 func _on_player_respawned(_respawn_info: Dictionary, _latest_cache_uid: String) -> void:
 	weather.reset_exposure()
+	volcano.reset_personal()
 	hud.hide_death_banner()
 	hud.show_respawn_banner()
 	audio.play(&"craft")
@@ -717,12 +737,13 @@ func _update_interaction_target(facing: Vector3) -> void:
 			hud.set_interaction_prompt("Reinforce Wall (2 Wood, 2 Stone) [%.0f/%.0f HP]" % [hp, mhp])
 		"rain_collector":
 			var stored := float(best_data.get("stored_water", 0.0))
+			var label := WaterQuality.get_label(int(best_data.get("water_quality", WaterQuality.Quality.RAINWATER)))
 			if stored <= 0.1:
 				hud.set_interaction_prompt("Rain Tarp (Empty — wait for rain)")
 			elif inventory.find_container_slot(true, false) >= 0:
-				hud.set_interaction_prompt("Fill Shell from Rain Tarp (%.0f mL)" % stored)
+				hud.set_interaction_prompt("Fill Shell: %s (%.0f mL)" % [label, stored])
 			else:
-				hud.set_interaction_prompt("Drink Rainwater (%.0f mL)" % stored)
+				hud.set_interaction_prompt("Drink %s (%.0f mL)" % [label, stored])
 		"water_source":
 			var q := int(best_data["quality"])
 			if not WaterQuality.is_safe(q):

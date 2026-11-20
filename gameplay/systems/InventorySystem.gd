@@ -320,7 +320,7 @@ func serialize() -> Dictionary:
 				"amount": int(slot["amount"]),
 			}
 			if slot.has("water_amount"):
-				row["water_amount"] = snappedf(float(slot["water_amount"]), 0.1)
+				row["water_amount"] = float(slot["water_amount"])
 				row["water_quality"] = int(slot.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
 			out.append(row)
 	return {

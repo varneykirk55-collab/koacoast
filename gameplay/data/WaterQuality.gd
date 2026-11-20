@@ -29,8 +29,10 @@ static func get_label(quality: int) -> String:
 			return "Unknown Water"
 
 
-## Extensible hook for future volcanic ash contamination without implementing ash now.
-static func evaluate_source_quality(source_type: StringName, _ash_exposure := 0.0) -> int:
+## Settled material is measured at the source, independent of player exposure.
+static func evaluate_source_quality(source_type: StringName, ash_exposure := 0.0) -> int:
+	if ash_exposure >= .30 and source_type in [&"freshwater", &"rainwater"]:
+		return Quality.ASH_CONTAMINATED
 	match source_type:
 		&"freshwater":
 			return Quality.CLEAN_FRESHWATER
