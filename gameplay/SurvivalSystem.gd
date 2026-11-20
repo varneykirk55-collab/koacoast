@@ -106,6 +106,8 @@ func _ready() -> void:
 	water_system.volcano = volcano
 	weather.volcano = volcano
 	resources.volcano = volcano
+	death_recovery.weather = weather
+	death_recovery.volcano = volcano
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -138,7 +140,9 @@ func _connect_signals() -> void:
 	hud.system_menu.resume_requested.connect(_close_all_modals)
 	hud.system_menu.save_requested.connect(perform_save)
 	hud.system_menu.load_requested.connect(perform_load)
+	hud.system_menu.designate_home_requested.connect(perform_designate_home_shelter)
 	hud.system_menu.new_game_requested.connect(perform_new_game)
+	crafting.item_crafted.connect(_on_item_crafted)
 	buildings.build_mode_changed.connect(_on_build_mode_changed)
 
 
@@ -281,7 +285,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("toggle_system_menu"):
 		buildings.set_build_mode(false)
-		hud.system_menu.open_menu(save_system.has_save())
+		hud.system_menu.open_menu(save_system.has_save(), buildings.has_shelter_near(_player.global_position, 14.0))
 		_sync_player_input_flags(true)
 		get_viewport().set_input_as_handled()
 		return
@@ -301,7 +305,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event.is_action_pressed("ui_cancel"):
-		hud.system_menu.open_menu(save_system.has_save())
+		hud.system_menu.open_menu(save_system.has_save(), buildings.has_shelter_near(_player.global_position, 14.0))
 		_sync_player_input_flags(true)
 		get_viewport().set_input_as_handled()
 
@@ -417,6 +421,8 @@ func perform_interact() -> Dictionary:
 				audio.play(&"error")
 				hud.push_toast(String(r_res.get("reason", "Need 2 Wood + 2 Stone to reinforce")), Color(0.98, 0.55, 0.45))
 			return r_res
+		"designate_home":
+			return perform_designate_home_shelter()
 		"resource":
 			var res := resources.harvest(_current_target["data"])
 			if res["ok"]:
@@ -529,6 +535,8 @@ func use_inventory_slot(slot_idx: int) -> Dictionary:
 
 
 func perform_save() -> Dictionary:
+	if crafting:
+		crafting.cancel_timed_craft()
 	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if res["ok"]:
 		audio.play(&"craft")
@@ -541,6 +549,8 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
+	if crafting:
+		crafting.cancel_timed_craft()
 	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if res["ok"]:
 		audio.play(&"craft")
@@ -555,6 +565,8 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
+	if crafting:
+		crafting.cancel_timed_craft()
 	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery, weather, volcano)
 	if wildlife:
 		wildlife.reset_all()
@@ -563,19 +575,41 @@ func perform_new_game() -> void:
 	hud.push_toast("Started New Game", Color(0.96, 0.92, 0.72))
 
 
+func perform_designate_home_shelter() -> Dictionary:
+	if _player == null or death_recovery == null or buildings == null:
+		return { "ok": false, "reason": "System unavailable" }
+	var p := _player.global_position
+	if not buildings.has_shelter_near(p, 14.0):
+		audio.play(&"error")
+		hud.push_toast("Build or stand near a shelter to set it as Home.", Color(0.98, 0.55, 0.45))
+		return { "ok": false, "reason": "no_shelter_nearby" }
+	death_recovery.set_home_shelter(p)
+	audio.play(&"craft")
+	hud.push_toast("Designated Current Shelter as Home Respawn!", Color(0.75, 0.96, 0.72))
+	if hud.system_menu.visible:
+		_close_all_modals()
+	return { "ok": true, "pos": p }
+
+
 func _on_craft_requested(recipe_id: StringName) -> void:
-	if crafting.craft(recipe_id):
-		audio.play(&"craft")
-		var rec := database.get_recipe(recipe_id)
-		if rec:
-			hud.push_toast("Crafted %s!" % rec.display_name, Color(0.70, 0.95, 0.82))
-	else:
+	if crafting.is_crafting():
+		return
+	if vitals:
+		crafting.set_craft_time_multiplier(vitals.get_crafting_duration_multiplier())
+	if not crafting.begin_timed_craft(recipe_id):
 		audio.play(&"error")
 		var eval := crafting.evaluate_recipe(recipe_id)
 		if eval["inventory_full"]:
 			hud.push_toast("Cannot craft: Inventory is full!", Color(0.98, 0.50, 0.42))
 		else:
 			hud.push_toast("Missing required materials.", Color(0.98, 0.55, 0.45))
+
+
+func _on_item_crafted(recipe_id: StringName, _output_item_id: StringName, _amount: int) -> void:
+	audio.play(&"craft")
+	var rec := database.get_recipe(recipe_id)
+	if rec:
+		hud.push_toast("Crafted %s!" % rec.display_name, Color(0.70, 0.95, 0.82))
 
 
 func _on_inventory_full(_item_id: StringName) -> void:
@@ -709,6 +743,9 @@ func _update_interaction_target(facing: Vector3) -> void:
 		if not water_src.is_empty():
 			best_type = "water_source"
 			best_data = water_src
+		elif buildings.has_shelter_near(p, 8.0) and death_recovery and not (death_recovery.has_home_shelter and death_recovery.home_shelter_pos.distance_to(p) < 10.0):
+			best_type = "designate_home"
+			best_data = { "pos": p }
 
 	if best_type == "":
 		_current_target.clear()
@@ -735,6 +772,8 @@ func _update_interaction_target(facing: Vector3) -> void:
 			var hp := float(best_data.get("hp", 0.0))
 			var mhp := float(best_data.get("max_hp", 1.0))
 			hud.set_interaction_prompt("Reinforce Wall (2 Wood, 2 Stone) [%.0f/%.0f HP]" % [hp, mhp])
+		"designate_home":
+			hud.set_interaction_prompt("Designate Home Shelter")
 		"rain_collector":
 			var stored := float(best_data.get("stored_water", 0.0))
 			var label := WaterQuality.get_label(int(best_data.get("water_quality", WaterQuality.Quality.RAINWATER)))

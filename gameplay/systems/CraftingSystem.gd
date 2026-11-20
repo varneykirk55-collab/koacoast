@@ -42,6 +42,8 @@ func cancel_timed_craft() -> void:
 
 
 func begin_timed_craft(recipe_id: StringName) -> bool:
+	if _active_recipe_id != &"":
+		return false
 	var status := evaluate_recipe(recipe_id)
 	if not status["craftable"]:
 		if status["inventory_full"]:

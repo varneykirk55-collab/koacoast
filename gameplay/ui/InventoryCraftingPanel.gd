@@ -33,6 +33,9 @@ var _filter_buttons: Array[Button] = []
 var _active_filter_idx := 0
 var _recipe_list: VBoxContainer
 var _recipe_buttons: Dictionary = {} # StringName -> Button
+var _craft_progress_box: HBoxContainer
+var _craft_progress_label: Label
+var _craft_progress_bar: ProgressBar
 var _selected_slot := 0
 
 
@@ -218,6 +221,25 @@ func _ready() -> void:
 	_recipe_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_recipe_list)
 
+	_craft_progress_box = HBoxContainer.new()
+	_craft_progress_box.visible = false
+	_craft_progress_box.add_theme_constant_override("separation", 10)
+	craft_col.add_child(_craft_progress_box)
+
+	_craft_progress_label = Label.new()
+	_craft_progress_label.text = "Crafting..."
+	_craft_progress_label.add_theme_font_size_override("font_size", 13)
+	_craft_progress_label.modulate = Color(0.95, 0.88, 0.56)
+	_craft_progress_box.add_child(_craft_progress_label)
+
+	_craft_progress_bar = ProgressBar.new()
+	_craft_progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_craft_progress_bar.custom_minimum_size = Vector2(0, 18)
+	_craft_progress_bar.min_value = 0.0
+	_craft_progress_bar.max_value = 100.0
+	_craft_progress_bar.value = 0.0
+	_craft_progress_box.add_child(_craft_progress_bar)
+
 
 func setup(db: GameDatabase, inv: InventorySystem, crafting: CraftingSystem) -> void:
 	_database = db
@@ -227,8 +249,30 @@ func setup(db: GameDatabase, inv: InventorySystem, crafting: CraftingSystem) -> 
 		_inventory.inventory_changed.connect(refresh)
 	if _crafting:
 		_crafting.item_crafted.connect(func(_r, _o, _a): refresh())
+		_crafting.craft_progress_changed.connect(_on_craft_progress_changed)
 	_build_recipe_rows()
 	refresh()
+
+
+func close_panel() -> void:
+	if _crafting:
+		_crafting.cancel_timed_craft()
+	if _craft_progress_box:
+		_craft_progress_box.visible = false
+	visible = false
+
+
+func _on_craft_progress_changed(active: bool, recipe_id: StringName, progress: float) -> void:
+	if _craft_progress_box == null:
+		return
+	_craft_progress_box.visible = active
+	if not active:
+		return
+	var rec := _database.get_recipe(recipe_id) if _database else null
+	var nm := rec.display_name if rec else String(recipe_id)
+	var trauma_note := " (Trauma +25%)" if (_crafting and _crafting.craft_time_multiplier > 1.05) else ""
+	_craft_progress_label.text = "Crafting %s%s" % [nm, trauma_note]
+	_craft_progress_bar.value = clampf(progress * 100.0, 0.0, 100.0)
 
 
 func open_panel() -> void:
@@ -236,10 +280,6 @@ func open_panel() -> void:
 	refresh()
 	if not _slot_buttons.is_empty():
 		_slot_buttons[0].grab_focus()
-
-
-func close_panel() -> void:
-	visible = false
 
 
 func refresh() -> void:

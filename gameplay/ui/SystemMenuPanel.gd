@@ -6,10 +6,12 @@ signal resume_requested
 signal save_requested
 signal load_requested
 signal new_game_requested
+signal designate_home_requested
 
 var _resume_btn: Button
 var _save_btn: Button
 var _load_btn: Button
+var _home_btn: Button
 var _new_btn: Button
 var _status_label: Label
 
@@ -49,6 +51,7 @@ func _ready() -> void:
 	_resume_btn = _add_button(vbox, "Resume Exploring", func(): resume_requested.emit())
 	_save_btn = _add_button(vbox, "Save Progress [F5]", func(): save_requested.emit())
 	_load_btn = _add_button(vbox, "Load Saved Game [F7]", func(): load_requested.emit())
+	_home_btn = _add_button(vbox, "Set Current Shelter as Home", func(): designate_home_requested.emit())
 	_new_btn = _add_button(vbox, "Start New Game", func(): new_game_requested.emit())
 
 	var controls := Label.new()
@@ -66,9 +69,11 @@ func _ready() -> void:
 	vbox.add_child(controls)
 
 
-func open_menu(has_save: bool) -> void:
+func open_menu(has_save: bool, near_shelter := false) -> void:
 	visible = true
 	_load_btn.disabled = not has_save
+	if _home_btn:
+		_home_btn.disabled = not near_shelter
 	_status_label.text = "Save file ready." if has_save else "No save file on disk yet."
 	if _resume_btn:
 		_resume_btn.grab_focus()
