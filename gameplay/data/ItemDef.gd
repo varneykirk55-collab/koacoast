@@ -12,3 +12,6 @@ extends Resource
 @export var placeable_piece_id: StringName = &""
 @export var tool_kind: StringName = &""
 @export var tool_bonus: int = 0
+@export var hunger_restore: float = 0.0
+@export var thirst_restore: float = 0.0
+@export var water_capacity: float = 0.0
