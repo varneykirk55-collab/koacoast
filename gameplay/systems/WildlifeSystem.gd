@@ -409,8 +409,7 @@ func _update_pig(pig: Dictionary, delta: float, is_night: bool, active_fires: Ar
 		if _player and dist_player < PIG_CORNERED_RADIUS:
 			pig["state"] = &"defensive"
 			if float(pig["bite_cooldown"]) <= 0.0 and _vitals:
-				_vitals.health = maxf(0.0, _vitals.health - 12.0)
-				_vitals.vitals_changed.emit()
+				_vitals.apply_damage(12.0, &"wildlife_attack", "Wild Boar Attack")
 				pig["bite_cooldown"] = 3.0
 				if _audio:
 					_audio.play_spatial(&"pig_grunt", pos)
@@ -655,8 +654,7 @@ func _update_shark(shark: Dictionary, delta: float, is_night: bool) -> void:
 			if _audio:
 				_audio.play_spatial(&"shark_splash", shark["pos"])
 			if _vitals:
-				_vitals.health = maxf(0.0, _vitals.health - SHARK_BITE_DAMAGE)
-				_vitals.vitals_changed.emit()
+				_vitals.apply_damage(SHARK_BITE_DAMAGE, &"shark_attack", "Shark Attack")
 			_emit_alert(&"shark_bite", "Shark attack! Get to shallow water!", shark["pos"], true)
 			# Brief circle-back after bite so the player has a window to escape.
 			shark["state"] = &"investigate"

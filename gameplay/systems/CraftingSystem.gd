@@ -3,14 +3,72 @@ extends Node
 ## Recipe-based crafting connected to InventorySystem and GameDatabase.
 
 signal item_crafted(recipe_id: StringName, output_item_id: StringName, amount: int)
+signal craft_progress_changed(active: bool, recipe_id: StringName, progress: float)
+
+@export var base_craft_duration := 0.8
 
 var database: GameDatabase
 var inventory: InventorySystem
+var craft_time_multiplier := 1.0
+
+var _active_recipe_id: StringName = &""
+var _active_elapsed := 0.0
+var _active_duration := 0.0
 
 
 func setup(db: GameDatabase, inv: InventorySystem) -> void:
 	database = db
 	inventory = inv
+
+
+func set_craft_time_multiplier(mult: float) -> void:
+	craft_time_multiplier = clampf(mult, 0.25, 4.0)
+
+
+func get_effective_craft_time(_recipe_id: StringName = &"") -> float:
+	return base_craft_duration * craft_time_multiplier
+
+
+func is_crafting() -> bool:
+	return _active_recipe_id != &""
+
+
+func cancel_timed_craft() -> void:
+	if _active_recipe_id != &"":
+		_active_recipe_id = &""
+		_active_elapsed = 0.0
+		_active_duration = 0.0
+		craft_progress_changed.emit(false, &"", 0.0)
+
+
+func begin_timed_craft(recipe_id: StringName) -> bool:
+	var status := evaluate_recipe(recipe_id)
+	if not status["craftable"]:
+		if status["inventory_full"]:
+			var rec_full := database.get_recipe(recipe_id)
+			if rec_full:
+				inventory.inventory_full.emit(rec_full.output_item_id)
+		return false
+	_active_recipe_id = recipe_id
+	_active_elapsed = 0.0
+	_active_duration = maxf(0.05, get_effective_craft_time(recipe_id))
+	craft_progress_changed.emit(true, _active_recipe_id, 0.0)
+	return true
+
+
+func _process(delta: float) -> void:
+	if _active_recipe_id == &"":
+		return
+	_active_elapsed += delta
+	var frac := clampf(_active_elapsed / maxf(0.05, _active_duration), 0.0, 1.0)
+	craft_progress_changed.emit(true, _active_recipe_id, frac)
+	if _active_elapsed >= _active_duration:
+		var rec_id := _active_recipe_id
+		_active_recipe_id = &""
+		_active_elapsed = 0.0
+		_active_duration = 0.0
+		craft_progress_changed.emit(false, &"", 0.0)
+		craft(rec_id)
 
 
 func get_recipes(station: StringName = &"hand") -> Array[RecipeDef]:

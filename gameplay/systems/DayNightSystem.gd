@@ -92,6 +92,8 @@ func advance_time(seconds: float) -> void:
 	while cycle_time >= total:
 		cycle_time -= total
 		day_number += 1
+	if _vitals:
+		_vitals.tick_survival_trauma(seconds)
 	_apply_environment()
 
 

@@ -26,6 +26,46 @@ func clear() -> void:
 	inventory_changed.emit()
 
 
+## Atomically extracts all carried slots (with full metadata) and empties inventory.
+func extract_all_slots() -> Array[Dictionary]:
+	var extracted: Array[Dictionary] = []
+	for i in slots.size():
+		if not slots[i].is_empty():
+			extracted.append(slots[i].duplicate(true))
+			slots[i] = {}
+	if not extracted.is_empty():
+		inventory_changed.emit()
+	return extracted
+
+
+## Adds a single slot entry back into inventory while preserving container/equipment metadata.
+## Returns the exact quantity transferred (0 if inventory is full).
+func add_slot_entry(entry: Dictionary) -> int:
+	if database == null or entry.is_empty():
+		return 0
+	var item_id := StringName(String(entry.get("item_id", "")))
+	var amt := int(entry.get("amount", 0))
+	if item_id == &"" or amt <= 0:
+		return 0
+	var def := database.get_item(item_id)
+	if def == null:
+		return 0
+	# Preserve metadata (e.g. water_amount & water_quality) in a dedicated slot for containers or unique items.
+	if def.water_capacity > 0.0 or entry.has("water_amount") or entry.has("metadata"):
+		var free_idx := slots.find({})
+		if free_idx == -1:
+			inventory_full.emit(item_id)
+			return 0
+		var cloned := entry.duplicate(true)
+		cloned["item_id"] = item_id
+		cloned["amount"] = mini(amt, maxi(1, def.max_stack))
+		slots[free_idx] = cloned
+		item_added.emit(item_id, int(cloned["amount"]))
+		inventory_changed.emit()
+		return int(cloned["amount"])
+	return add_item(item_id, amt)
+
+
 func get_slot(index: int) -> Dictionary:
 	if index < 0 or index >= slots.size():
 		return {}

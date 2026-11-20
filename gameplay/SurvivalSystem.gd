@@ -16,6 +16,7 @@ var vitals: SurvivalVitalsSystem
 var water_system: WaterSystem
 var day_night: DayNightSystem
 var wildlife: WildlifeSystem
+var death_recovery: DeathRecoverySystem
 var save_system: SaveSystem
 var audio: AudioFeedback
 var hud: SurvivalHUD
@@ -86,6 +87,11 @@ func _ready() -> void:
 	add_child(wildlife)
 	wildlife.setup(_terrain, _player, day_night, buildings, vitals, audio)
 
+	death_recovery = DeathRecoverySystem.new()
+	death_recovery.name = "DeathRecoverySystem"
+	add_child(death_recovery)
+	death_recovery.setup(_terrain, _player, inventory, buildings, vitals, day_night, wildlife)
+
 	save_system = SaveSystem.new()
 	save_system.name = "SaveSystem"
 	add_child(save_system)
@@ -108,6 +114,9 @@ func _connect_signals() -> void:
 		wildlife.wildlife_warning.connect(_on_wildlife_warning)
 	if day_night:
 		day_night.phase_changed.connect(_on_phase_changed)
+	if death_recovery:
+		death_recovery.death_started.connect(_on_death_started)
+		death_recovery.player_respawned.connect(_on_player_respawned)
 	hud.inv_panel.close_requested.connect(_close_all_modals)
 	hud.inv_panel.craft_requested.connect(_on_craft_requested)
 	hud.inv_panel.use_slot_requested.connect(use_inventory_slot)
@@ -131,12 +140,18 @@ func _init_navigation_map() -> void:
 func _process(_delta: float) -> void:
 	if _player == null:
 		return
+	var dying := death_recovery != null and death_recovery.is_death_in_progress()
 	var modal_open := hud.is_any_modal_open()
-	_sync_player_input_flags(modal_open)
+	_sync_player_input_flags(modal_open or dying)
+
+	if vitals and crafting:
+		crafting.set_craft_time_multiplier(vitals.get_crafting_duration_multiplier())
 
 	var facing := _get_player_facing()
 	if _map_initialized:
 		hud.update_navigation(_player.global_position, facing, buildings.get_base_markers())
+	if death_recovery:
+		hud.update_recovery_indicator(death_recovery.get_latest_cache_indicator(_player.global_position))
 	if vitals:
 		var dbg := vitals.get_debug_summary()
 		if day_night:
@@ -145,7 +160,7 @@ func _process(_delta: float) -> void:
 			dbg += "\n" + wildlife.get_debug_summary()
 		hud.update_debug_vitals(dbg)
 
-	if modal_open:
+	if modal_open or dying:
 		_current_target.clear()
 		hud.set_interaction_prompt("")
 		hud.update_build_hud(false, database.building_piece_order, buildings.selected_index, buildings.selected_material_id, database, inventory, {})
@@ -160,6 +175,8 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if death_recovery and death_recovery.is_death_in_progress():
+		return
 	if event.is_action_pressed("quick_save"):
 		perform_save()
 		get_viewport().set_input_as_handled()
@@ -324,6 +341,19 @@ func perform_interact() -> Dictionary:
 		return { "ok": false, "reason": "nothing_nearby" }
 	var ttype: String = _current_target["type"]
 	match ttype:
+		"death_cache":
+			var cache_data: Dictionary = _current_target["data"]
+			var rec_res := death_recovery.recover_cache(String(cache_data["uid"]))
+			if bool(rec_res.get("fully_emptied", false)):
+				audio.play(&"sparkle")
+				hud.push_toast("Recovered all equipment from Death Cache!", Color(0.72, 0.96, 0.72))
+			elif int(rec_res.get("recovered_items", 0)) > 0:
+				audio.play(&"gather")
+				hud.push_toast("Recovered %d item(s) — %d left in cache (Bag Full)" % [int(rec_res["recovered_items"]), int(rec_res["remaining_items"])], Color(1.0, 0.80, 0.44))
+			else:
+				audio.play(&"error")
+				hud.push_toast("Inventory full! Free space to recover Death Cache.", Color(0.98, 0.50, 0.42))
+			return rec_res
 		"collectible":
 			var res := collectibles.collect(_current_target["data"])
 			if res["ok"]:
@@ -470,7 +500,7 @@ func use_inventory_slot(slot_idx: int) -> Dictionary:
 
 
 func perform_save() -> Dictionary:
-	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night)
+	var res := save_system.save_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Progress Saved!", Color(0.65, 0.95, 0.78))
@@ -482,7 +512,7 @@ func perform_save() -> Dictionary:
 
 
 func perform_load() -> Dictionary:
-	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night)
+	var res := save_system.load_game(_player, inventory, resources, collectibles, buildings, vitals, water_system, day_night, death_recovery)
 	if res["ok"]:
 		audio.play(&"craft")
 		hud.push_toast("Saved Game Loaded!", Color(0.70, 0.92, 1.0))
@@ -496,9 +526,10 @@ func perform_load() -> Dictionary:
 
 
 func perform_new_game() -> void:
-	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night)
+	save_system.new_game(_player, inventory, resources, collectibles, buildings, false, vitals, water_system, day_night, death_recovery)
 	if wildlife:
 		wildlife.reset_all()
+	hud.hide_death_banner()
 	_close_all_modals()
 	hud.push_toast("Started New Game", Color(0.96, 0.92, 0.72))
 
@@ -543,6 +574,22 @@ func _on_phase_changed(new_phase: StringName, day_num: int) -> void:
 		hud.push_toast("Day %d — Sunrise over KoaCoast." % day_num, Color(1.0, 0.88, 0.62))
 
 
+func _on_death_started(_cause: StringName, cause_label: String, _cache_uid: String) -> void:
+	buildings.set_build_mode(false)
+	crafting.cancel_timed_craft()
+	hud.inv_panel.close_panel()
+	hud.map_overlay.close_map()
+	hud.system_menu.close_menu()
+	audio.play(&"error")
+	hud.show_death_banner(cause_label)
+
+
+func _on_player_respawned(_respawn_info: Dictionary, _latest_cache_uid: String) -> void:
+	hud.hide_death_banner()
+	hud.show_respawn_banner()
+	audio.play(&"craft")
+
+
 func _on_build_mode_changed(active: bool) -> void:
 	if _player and "build_mode_active" in _player:
 		_player.set("build_mode_active", active)
@@ -571,6 +618,7 @@ func _sync_player_input_flags(modal_open: bool) -> void:
 
 func _update_interaction_target(facing: Vector3) -> void:
 	var p := _player.global_position
+	var cache_entry := death_recovery.find_nearest_cache(p) if death_recovery else {}
 	var col_spot := collectibles.find_nearest_collectible(p)
 	var door_entry := buildings.find_nearest_door(p)
 	var campfire_entry := buildings.find_nearest_campfire(p)
@@ -582,6 +630,12 @@ func _update_interaction_target(facing: Vector3) -> void:
 	var best_data: Dictionary = {}
 	var best_dist := INF
 
+	if not cache_entry.is_empty():
+		var d := (cache_entry["pos"] as Vector3).distance_to(p)
+		if d < best_dist:
+			best_dist = d
+			best_type = "death_cache"
+			best_data = cache_entry
 	if not col_spot.is_empty():
 		var d := (col_spot["pos"] as Vector3).distance_to(p)
 		if d < best_dist:
@@ -632,6 +686,12 @@ func _update_interaction_target(facing: Vector3) -> void:
 
 	_current_target = { "type": best_type, "data": best_data }
 	match best_type:
+		"death_cache":
+			var item_cnt := 0
+			for it in best_data.get("items", []):
+				if it is Dictionary:
+					item_cnt += int(it.get("amount", 0))
+			hud.set_interaction_prompt("Recover Death Cache (%d items)" % item_cnt)
 		"collectible":
 			hud.set_interaction_prompt(collectibles.get_prompt_for_spot(best_data))
 		"door":
