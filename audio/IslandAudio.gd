@@ -30,6 +30,12 @@ var survey_time := 0.0
 var mix_channel := {"Ambient": 0.78, "Effects": 0.86}
 var panel: PanelContainer
 var old_mouse_mode: Input.MouseMode
+var rainfall := 0.0
+var storm_wind := 0.0
+var sheltered := false
+var thunderstorm := false
+var thunder: AudioStreamPlayer3D
+var thunder_timer := 15.0
 var closing := false
 
 
@@ -40,16 +46,19 @@ func _ready() -> void:
 
 func _setup() -> void:
 	_load_preferences()
-	for kind in ["canopy", "insects", "wind"]:
+	for kind in ["canopy", "insects", "wind", "rain_light", "rain_heavy", "rain_leaves", "rain_roof"]:
 		var track := AudioStreamPlayer.new()
 		track.bus = "Ambient"
 		track.stream = sound(kind, true)
 		track.volume_db = SILENCE
 		add_child(track)
-		track.play(rng.randf_range(0.0, 4.0))
+		if not kind.begins_with("rain_"):
+			track.play(rng.randf_range(0.0, 4.0))
 		bed[kind] = track
 	surf = _positional(38.0, 260.0)
 	surf.stream = sound("surf", true)
+	thunder = _positional(48, 310)
+	thunder.stream = sound("thunder")
 	bird = _positional(12.0, 115.0)
 	for i in VOICE_LIMIT:
 		voices.append(_positional(14.0, 220.0))
@@ -73,6 +82,8 @@ func stop_audio() -> void:
 		track.stop()
 	for track in voices:
 		track.stop()
+	if is_instance_valid(thunder):
+		thunder.stop()
 	if is_instance_valid(bird):
 		bird.stop()
 	if is_instance_valid(surf):
@@ -164,7 +175,31 @@ func _process(delta: float) -> void:
 		var w: float = gains.get(kind, 0.0)
 		if kind == "insects" and night_factor > 0.01:
 			w = clampf(maxf(w, 0.35 * night_factor) * lerpf(1.0, 1.45, night_factor), 0.0, 1.25)
+		match kind:
+			"rain_light": w = rainfall * (1.0 - .75 * rainfall) * (.35 if sheltered else 1.0)
+			"rain_heavy": w = smoothstep(.35,.92,rainfall) * (.28 if sheltered else 1.0)
+			"rain_leaves": w = jungle * rainfall * (.35 if sheltered else 1.0)
+			"rain_roof": w = rainfall if sheltered else 0.0
+			"wind": w = maxf(w,storm_wind * (.32 if sheltered else 1.0))
+		if kind.begins_with("rain_"):
+			if w <= .001 and bed[kind].volume_db <= -60:
+				bed[kind].stop()
+				continue
+			if not bed[kind].playing:
+				bed[kind].play(rng.randf_range(0,5))
 		_fade(bed[kind], w, nominal, ease)
+	if thunderstorm and rainfall > .68:
+		thunder_timer -= delta
+		if thunder_timer <= 0:
+			var near := rainfall > .88 and rng.randf() < .42
+			var distance := rng.randf_range(25,58) if near else rng.randf_range(95,230)
+			thunder.global_position = p + Vector3.FORWARD.rotated(Vector3.UP,rng.randf()*TAU)*distance + Vector3.UP*22
+			thunder.volume_db = -10 if near else -15
+			thunder.pitch_scale = rng.randf_range(.77,1.09)
+			thunder.play()
+			thunder_timer = rng.randf_range(15,43)
+	else:
+		thunder_timer = 10
 	_fade(surf, gains.get("surf", 0.0), -13.0, ease)
 	_update_voices(ease)
 	wildlife_time -= delta
@@ -360,3 +395,9 @@ func _input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			panel.show()
 		get_viewport().set_input_as_handled()
+
+func set_weather(rain: float, wind: float, under_roof: bool, storm: bool) -> void:
+	rainfall = rain
+	storm_wind = smoothstep(.25,.95,wind)
+	sheltered = under_roof
+	thunderstorm = storm

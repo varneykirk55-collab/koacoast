@@ -34,6 +34,9 @@ var _day_ambient_energy := 0.62
 var _day_fog_color := Color(0.70, 0.82, 0.88, 1.0)
 
 
+var weather_cloud := 0.0
+var clear_fog_density := 0.0
+
 func setup(sun: DirectionalLight3D, world_env: WorldEnvironment, vitals: SurvivalVitalsSystem, island_audio: Node) -> void:
 	_sun = sun
 	_world_env = world_env
@@ -45,6 +48,7 @@ func setup(sun: DirectionalLight3D, world_env: WorldEnvironment, vitals: Surviva
 	if _world_env and _world_env.environment:
 		var env := _world_env.environment
 		_day_ambient_color = env.ambient_light_color
+		clear_fog_density = env.fog_density
 		_day_ambient_energy = env.ambient_light_energy
 		_day_fog_color = env.fog_light_color
 		if env.sky and env.sky.sky_material is ShaderMaterial:
@@ -189,8 +193,11 @@ func _apply_environment() -> void:
 		# Nighttime reduces heat pressure on thirst depletion.
 		heat_factor = lerpf(0.95, 0.84, night_factor)
 
+	if _sun:
+		_sun.light_energy *= 1.0 - .27 * weather_cloud
 	# Update WorldEnvironment sky, ambient, and fog smoothly.
 	if _sky_mat:
+		_sky_mat.set_shader_parameter("weather_cloud", weather_cloud)
 		_sky_mat.set_shader_parameter("night_factor", night_factor)
 		_sky_mat.set_shader_parameter("twilight_factor", twilight_factor)
 	if _world_env and _world_env.environment:
@@ -198,6 +205,7 @@ func _apply_environment() -> void:
 		var twilight_amb := Color(0.78, 0.56, 0.46, 1.0)
 		var night_amb := Color(0.14, 0.20, 0.34, 1.0)
 		var amb_col := _day_ambient_color.lerp(twilight_amb, twilight_factor * 0.7).lerp(night_amb, night_factor)
+		env.fog_density = clear_fog_density * (1.0 + 2.2 * weather_cloud * weather_cloud)
 		env.ambient_light_color = amb_col
 		env.ambient_light_energy = lerpf(_day_ambient_energy, 0.18, night_factor)
 

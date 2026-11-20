@@ -13,6 +13,7 @@ const COLLECTOR_INTERACT_RANGE := 3.2
 @export var collector_capacity := 100.0
 @export var rain_fill_rate_per_sec := 5.0
 
+var buildings: BuildingSystem
 var _terrain: Terrain3D
 var _vitals: SurvivalVitalsSystem
 var _inventory: InventorySystem
@@ -44,6 +45,8 @@ func _process(delta: float) -> void:
 	var gain := rain_fill_rate_per_sec * rain * delta
 	var quality := WaterQuality.evaluate_source_quality(&"rainwater", _vitals.volcanic_ash_exposure)
 	for entry: Dictionary in _collectors.values():
+		if buildings and buildings.weather_cover(entry.pos + Vector3.UP).x > 0:
+			continue
 		var cur := float(entry["stored_water"])
 		if cur < collector_capacity:
 			var next_val := minf(collector_capacity, cur + gain)
