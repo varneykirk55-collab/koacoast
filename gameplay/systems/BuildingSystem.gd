@@ -346,7 +346,7 @@ func reinforce_piece(uid: String, consume_resources := true) -> Dictionary:
 	entry["hp"] = entry["max_hp"]
 	_attach_reinforcement_visual(entry["node"], entry["piece_id"])
 	piece_reinforced.emit(uid)
-	return { "ok": true, "uid": uid, "hp": entry["hp"] }
+	return { "ok": true, "uid": uid, "hp": entry["hp"], "max_hp": entry["max_hp"] }
 
 
 func damage_piece(uid: String, raw_damage: float) -> Dictionary:

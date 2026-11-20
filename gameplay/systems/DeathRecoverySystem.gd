@@ -39,6 +39,8 @@ var _buildings: BuildingSystem
 var _vitals: SurvivalVitalsSystem
 var _day_night: DayNightSystem
 var _wildlife: WildlifeSystem
+var weather: TropicalWeather
+var volcano: VolcanicHazards
 var _caches_root: Node3D
 
 
@@ -339,7 +341,12 @@ func _is_valid_cache_spot(pos: Vector3) -> bool:
 	var n := _sample_normal(pos)
 	if n.y < 0.78:
 		return false
-	if _buildings and _buildings.is_position_blocked_by_structure(Vector3(pos.x, h, pos.z), 0.7):
+	var grounded := Vector3(pos.x, h, pos.z)
+	if _buildings and _buildings.is_position_blocked_by_structure(grounded, 0.7):
+		return false
+	if weather and weather.flood_depth(grounded) > 0.45:
+		return false
+	if volcano and (volcano.in_mud(grounded) or volcano.heat_at(grounded) > 0.20):
 		return false
 	return true
 
@@ -373,6 +380,10 @@ func _is_safe_respawn_spot(pos: Vector3) -> bool:
 		return false
 	var grounded := Vector3(pos.x, h, pos.z)
 	if _buildings and _buildings.is_position_blocked_by_structure(grounded, 0.95):
+		return false
+	if weather and weather.flood_depth(grounded) > 0.25:
+		return false
+	if volcano and (volcano.in_mud(grounded) or volcano.heat_at(grounded) > 0.12):
 		return false
 	if _wildlife:
 		for pig in _wildlife.pigs:
