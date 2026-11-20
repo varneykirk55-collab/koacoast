@@ -18,7 +18,7 @@ func has_save() -> bool:
 	return FileAccess.file_exists(save_path)
 
 
-func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> Dictionary:
+func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null, volcano: VolcanicHazards = null) -> Dictionary:
 	if player == null or inventory == null or resources == null or collectibles == null or buildings == null:
 		return { "ok": false, "reason": "Missing system reference" }
 
@@ -52,6 +52,9 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	if weather:
 		payload["weather"] = weather.serialize()
 
+	if volcano:
+		payload["volcano"] = volcano.serialize()
+
 	var json_str := JSON.stringify(payload, "\t", true, true)
 	var tmp_path := save_path + ".tmp"
 	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
@@ -72,7 +75,7 @@ func save_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "path": save_path }
 
 
-func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> Dictionary:
+func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null, volcano: VolcanicHazards = null) -> Dictionary:
 	if not FileAccess.file_exists(save_path):
 		return { "ok": false, "reason": "No save file found" }
 	var file := FileAccess.open(save_path, FileAccess.READ)
@@ -113,12 +116,17 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 			death_recovery.clear_all()
 	if weather:
 		weather.deserialize(data.get("weather", {}))
+	if volcano:
+		var volcanic_data = data.get("volcano", {})
+		volcano.deserialize(volcanic_data if volcanic_data is Dictionary else {})
 	if data.has("player") and data["player"] is Dictionary:
 		_apply_player_state(player, data["player"])
 	# If save was captured mid-death, immediately place player safely alive at respawn without re-dropping gear.
 	if vitals and vitals.is_dead and death_recovery:
 		if weather:
 			weather.reset_exposure()
+		if volcano:
+			volcano.reset_personal()
 		var info := death_recovery.resolve_respawn_location()
 		if player:
 			player.global_position = info["pos"]
@@ -127,7 +135,7 @@ func load_game(player: Node3D, inventory: InventorySystem, resources: ResourceGa
 	return { "ok": true, "version": version }
 
 
-func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null) -> void:
+func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGatherSystem, collectibles: BeachCollectibleSystem, buildings: BuildingSystem, delete_save := false, vitals: SurvivalVitalsSystem = null, water_system: WaterSystem = null, day_night: DayNightSystem = null, death_recovery: DeathRecoverySystem = null, weather: TropicalWeather = null, volcano: VolcanicHazards = null) -> void:
 	if inventory:
 		inventory.clear()
 	if resources:
@@ -152,6 +160,8 @@ func new_game(player: Node3D, inventory: InventorySystem, resources: ResourceGat
 			player.call("_snap_to_ground")
 	if weather:
 		weather.deserialize({})
+	if volcano:
+		volcano.deserialize({})
 	if delete_save and FileAccess.file_exists(save_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
 

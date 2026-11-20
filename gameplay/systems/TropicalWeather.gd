@@ -1,6 +1,10 @@
 class_name TropicalWeather
 extends Node3D
 
+@export var wind_direction := Vector2(1.0, .13)
+var volcano: VolcanicHazards
+var ash_cooling := 0.0
+
 enum State { CLEAR, PARTLY_CLOUDY, LIGHT_RAIN, HEAVY_RAIN, TROPICAL_STORM }
 const LABELS := ["Clear", "Partly cloudy", "Light rain", "Heavy rain", "Tropical storm"]
 # Rain, wind and cloud cover.
@@ -157,15 +161,16 @@ func _update_fires(p: Vector3, dt: float) -> float:
 	for fire in buildings.get_active_campfires():
 		var covered := buildings.weather_cover(fire.pos).x > 0
 		var soaking := not covered and climate.x >= .70
+		var falling_ash := volcano.ash_at(fire.pos, climate.y, climate.x) if volcano and not covered else 0.0
 		var drench := float(fire.get("drench",0))
-		drench = maxf(0,drench + (1.0 if soaking else -2.0)*dt)
+		drench = maxf(0,drench + (1.0 if soaking else -2.0) * dt + falling_ash * 2.0 * dt)
 		fire["drench"] = drench
 		if drench >= 55 or flood_depth(fire.pos) > .3:
 			buildings.toggle_campfire(fire.uid)
 			fire["drench"] = 0.0
 			continue
 		var distance := p.distance_to(fire.pos)
-		warmth = maxf(warmth, (1.0-smoothstep(1,7,distance)) * (.5 if soaking else 1.0))
+		warmth = maxf(warmth, (1.0-smoothstep(1,7,distance)) * (.5 if soaking else 1.0) * (1.0 - .55 * falling_ash))
 	return warmth
 
 func update_exposure(dt: float, depth: float, shelter: Vector2, warmth: float, night: float, altitude: float) -> void:
@@ -174,7 +179,7 @@ func update_exposure(dt: float, depth: float, shelter: Vector2, warmth: float, n
 	var soak := maxf(rainfall * .020, smoothstep(.16,.60,depth) * .065)
 	var dry := (.004 + .009*shelter.x + .024*warmth) * (1.0-smoothstep(.02,.20,soak*50))
 	wetness = clampf(wetness + dt*(soak-dry),0,1)
-	var chill := wetness * (.003 + .007*wind + .004*night + .006*smoothstep(90,320,altitude))
+	var chill := wetness * (.003 + .007*wind + .004*night + .006*smoothstep(90,320,altitude) + .006 * ash_cooling)
 	var recovery := .0035 + .012*shelter.x + .009*shelter.y + .03*warmth
 	exposure = clampf(exposure + dt*(chill-recovery),0,1)
 	vitals.cold_exposure = exposure
@@ -190,7 +195,7 @@ func _present(p: Vector3) -> void:
 	rain.visible = not roofed and climate.x > .015
 	rain.emitting = rain.visible
 	rain.amount_ratio = climate.x
-	drops.direction = Vector3(climate.y*.55,-1,.05).normalized()
+	drops.direction = Vector3(wind_direction.x * climate.y * .55,-1,wind_direction.y * climate.y * .55).normalized()
 	rain_material.set_shader_parameter("ground_y",p.y-2.5)
 	var roofs := buildings.rain_masks(p)
 	rain_material.set_shader_parameter("roof_count", roofs.size())

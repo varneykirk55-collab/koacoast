@@ -102,6 +102,8 @@ var _berry_material: StandardMaterial3D
 var _coconut_material: StandardMaterial3D
 
 
+var volcano: VolcanicHazards
+
 func setup(terrain: Terrain3D, inventory: InventorySystem, database: GameDatabase) -> void:
 	_terrain = terrain
 	_inventory = inventory
@@ -217,6 +219,8 @@ func harvest(target: Dictionary) -> Dictionary:
 		return { "ok": false, "reason": "inventory_full" }
 
 	var respawn := float(profile.get("respawn", 90.0))
+	if volcano and kind in [&"berry_bush", &"branch", &"tree", &"palm_tree"]:
+		respawn *= volcano.regrowth_at(target["pos"])
 	_depleted_until[node_id] = _elapsed_time + respawn
 	_set_prop_active(node_id, false)
 	var pos: Vector3 = target["pos"]

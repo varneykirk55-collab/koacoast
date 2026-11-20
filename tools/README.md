@@ -111,3 +111,26 @@ and finding cover reduces cold stress.
 
 Run the integrated weather regression in the island scene with Godot 4.7:
 `godot --headless --fixed-fps 60 --path . -s tools/test_tropical_weather.gd`.
+
+## Volcanic hazards
+
+The volcano uses the summit at X/Z (48, -126) and part of the existing basalt
+field near (534, 106). Its default dormant interval is 40–70 minutes, followed
+by 95 seconds of unrest and 80 seconds of escalation. Wearable protection is
+not required. Leave the summit and basalt field as the plume grows, move upwind
+to clear ash, or shelter behind a roof and walls.
+
+A debris flow can follow the southeast drainage from (560, 150) to (560, 350)
+when fresh ash overlaps with heavy rain. The headwater rumbles before the flow
+arrives. Ordinary weather flooding uses its own basins. Store drinking water in
+containers, keep exposed tarps covered or empty them if contaminated, and check
+freshwater prompts as the watershed recovers. After recovery, ash-enriched areas
+can shorten the next vegetation resource regrowth timer by up to 16%.
+
+In a debug build, use Alt+U for unrest, Alt+V for eruption, Alt+O for recovery,
+Alt+N for a seeded rainfall-assisted mudflow, and Alt+Backspace to reset the
+volcano. F4 shows the current phase, wind bearing, ash and water contamination.
+Reset clears the geological forecast and deposits. Previously contaminated
+stored drinking water keeps its quality until drained.
+
+`godot --headless --fixed-fps 60 -s tools/test_volcanic_hazards.gd`

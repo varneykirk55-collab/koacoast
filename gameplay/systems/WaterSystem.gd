@@ -13,6 +13,7 @@ const COLLECTOR_INTERACT_RANGE := 3.2
 @export var collector_capacity := 100.0
 @export var rain_fill_rate_per_sec := 5.0
 
+var volcano: VolcanicHazards
 var buildings: BuildingSystem
 var _terrain: Terrain3D
 var _vitals: SurvivalVitalsSystem
@@ -43,10 +44,10 @@ func _process(delta: float) -> void:
 	if rain <= 0.001:
 		return
 	var gain := rain_fill_rate_per_sec * rain * delta
-	var quality := WaterQuality.evaluate_source_quality(&"rainwater", _vitals.volcanic_ash_exposure)
 	for entry: Dictionary in _collectors.values():
 		if buildings and buildings.weather_cover(entry.pos + Vector3.UP).x > 0:
 			continue
+		var quality := WaterQuality.evaluate_source_quality(&"rainwater", float(entry.get("ash_load", 0)))
 		var cur := float(entry["stored_water"])
 		if cur < collector_capacity:
 			var next_val := minf(collector_capacity, cur + gain)
@@ -74,7 +75,7 @@ func detect_water_source(player_pos: Vector3) -> Dictionary:
 					best_d2 = d2
 					best_fw = wp
 	if best_fw != Vector3.INF:
-		var q := WaterQuality.evaluate_source_quality(&"freshwater", _vitals.volcanic_ash_exposure if _vitals else 0.0)
+		var q := WaterQuality.evaluate_source_quality(&"freshwater", volcano.water_ash(best_fw) if volcano else 0.0)
 		return {
 			"type": &"freshwater",
 			"quality": q,
@@ -194,8 +195,9 @@ func serialize() -> Dictionary:
 			"uid": String(entry["uid"]),
 			"pos": [p.x, p.y, p.z],
 			"rot_y": float(entry["rot_y"]),
-			"stored_water": snappedf(float(entry["stored_water"]), 0.1),
+			"stored_water": float(entry["stored_water"]),
 			"water_quality": int(entry["water_quality"]),
+			"ash_load": float(entry.get("ash_load", 0)),
 			"anchored_to_trees": bool(entry.get("anchored_to_trees", false)),
 		})
 	return { "next_uid": _next_uid, "collectors": list }
@@ -219,6 +221,8 @@ func deserialize(data: Dictionary) -> void:
 		var q := int(raw.get("water_quality", WaterQuality.Quality.RAINWATER))
 		var anchored := bool(raw.get("anchored_to_trees", false))
 		_spawn_collector(uid, pos, rot_y, stored, q, anchored)
+		if _collectors.has(uid):
+			_collectors[uid]["ash_load"] = clampf(float(raw.get("ash_load", 0)), 0, 1)
 
 
 func _spawn_collector(uid: String, pos: Vector3, rot_y: float, stored_water: float, quality: int, anchored_to_trees: bool) -> void:
@@ -341,3 +345,19 @@ func _build_materials() -> void:
 	_water_mat.albedo_color = Color(0.22, 0.68, 0.86, 0.82)
 	_water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_water_mat.roughness = 0.18
+
+## A sheltered vessel keeps its existing water. Residue in exposed empty tarps
+## washes through over time. Contaminated water already stored stays unsafe.
+func expose_collectors(dt: float, wind: float) -> void:
+	for entry: Dictionary in _collectors.values():
+		var load := float(entry.get("ash_load", 0))
+		if volcano.intensity <= 0 and load <= 0:
+			continue
+		var p: Vector3 = entry.pos + Vector3.UP
+		if buildings.weather_cover(p).x > 0.0:
+			continue
+		var fallout := volcano.ash_at(p, wind, 0)
+		load = clampf(load + dt * (fallout * .030 - .003), 0, 1)
+		entry["ash_load"] = load
+		if load >= .30 and float(entry.stored_water) > 0:
+			entry["water_quality"] = WaterQuality.Quality.ASH_CONTAMINATED

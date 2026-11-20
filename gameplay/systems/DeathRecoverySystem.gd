@@ -400,7 +400,7 @@ func serialize() -> Dictionary:
 				"amount": int(item.get("amount", 0)),
 			}
 			if item.has("water_amount"):
-				row["water_amount"] = snappedf(float(item["water_amount"]), 0.1)
+				row["water_amount"] = float(item["water_amount"])
 				row["water_quality"] = int(item.get("water_quality", WaterQuality.Quality.CLEAN_FRESHWATER))
 			if item.has("metadata") and item["metadata"] is Dictionary:
 				row["metadata"] = (item["metadata"] as Dictionary).duplicate(true)

@@ -17,3 +17,7 @@ are retained locally. Music has its own bus for future tracks.
 Weather adds original CC0 synthesized rain, leaf patter, roof impacts and thunder.
 These temporary cues use filtered noise and decaying transients. Thunder varies
 in position and pitch. Storm wind reuses the island's existing wind layer.
+
+Volcano audio reuses the CC0 procedural thunder, rock contact and rapids cues
+with positional attenuation and pitch adjustment. These cues stand in for
+field-recorded volcanic rumble, rockfall and debris-flow sound.
